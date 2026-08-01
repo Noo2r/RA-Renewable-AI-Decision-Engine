@@ -67,3 +67,29 @@ def test_curtail_always_present_as_fallback_when_surplus_exists():
     actions = [a["action"] for a in result["ranked_actions"]]
     assert "curtail" in actions
     assert actions[-1] == "curtail"  # lowest-value fallback, ranked last when surplus exists
+
+
+def test_evaluate_without_battery_capacity_arg_still_works():
+    """Backward compat: battery_capacity_kwh is optional and defaults to the
+    original single-station constant."""
+    result = evaluate(BASE, FLAT_FORECAST, FLAT_PRICES)
+    assert result["recommended"]["action"] in {"battery_charge", "water_pumping", "sell_grid", "curtail"}
+
+
+def test_smaller_battery_capacity_reduces_charge_headroom():
+    # A much smaller battery should cap expected_kwh for battery_charge lower
+    # than the default (50 kWh) battery would, given identical inputs.
+    low_soc_current = {**BASE, "battery_soc": 80.0}
+    big_battery = evaluate(low_soc_current, FLAT_FORECAST, FLAT_PRICES, battery_capacity_kwh=50.0)
+    small_battery = evaluate(low_soc_current, FLAT_FORECAST, FLAT_PRICES, battery_capacity_kwh=5.0)
+
+    def charge_kwh(result):
+        for a in result["ranked_actions"]:
+            if a["action"] == "battery_charge":
+                return a["expected_kwh"]
+        return None
+
+    small_kwh = charge_kwh(small_battery)
+    big_kwh = charge_kwh(big_battery)
+    assert small_kwh is not None and big_kwh is not None
+    assert small_kwh < big_kwh

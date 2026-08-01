@@ -23,7 +23,17 @@ def _avg(values, default=0.0):
     return sum(values) / len(values) if values else default
 
 
-def evaluate(current: dict, forecast_points: list[dict], future_prices: list[float]) -> dict:
+def evaluate(
+    current: dict,
+    forecast_points: list[dict],
+    future_prices: list[float],
+    battery_capacity_kwh: float = BATTERY_CAPACITY_KWH,
+) -> dict:
+    """battery_capacity_kwh defaults to the original single-station constant
+    for full backward compatibility; multi-station callers should pass the
+    requested station's configured battery_capacity_kwh so headroom is
+    computed against that station's actual battery size.
+    """
     surplus_kw = current["solar_kw"] + current["wind_kw"] - current["demand_kw"]
     battery_soc = current["battery_soc"]
     price_now = current["price_egp"]
@@ -36,7 +46,7 @@ def evaluate(current: dict, forecast_points: list[dict], future_prices: list[flo
     actions = []
 
     # --- battery_charge --------------------------------------------------
-    headroom_kwh = BATTERY_CAPACITY_KWH * (1 - battery_soc / 100)
+    headroom_kwh = battery_capacity_kwh * (1 - battery_soc / 100)
     charge_kwh = max(0.0, min(avg_surplus_next_hour, BATTERY_CAPACITY_KWH)) * PLANNING_HOURS
     charge_kwh = min(charge_kwh, headroom_kwh)
     if surplus_kw > 0 and battery_soc < 95 and charge_kwh > 0.05:

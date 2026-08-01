@@ -11,12 +11,21 @@ async function request(path, options) {
   return res.json();
 }
 
+function withStation(params, stationId) {
+  const search = new URLSearchParams(params);
+  if (stationId) search.set("station_id", stationId);
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
 export const api = {
-  getState: () => request("/state"),
-  getForecast: (hours = 6) => request(`/forecast?hours=${hours}`),
-  getDecision: () => request("/decision"),
-  logDecision: () => request("/decision/log", { method: "POST" }),
-  getHistory: (limit = 20) => request(`/history?limit=${limit}`),
+  getStations: () => request("/stations"),
+  getState: (stationId) => request(`/state${withStation({}, stationId)}`),
+  getForecast: (hours = 6, stationId) => request(`/forecast${withStation({ hours }, stationId)}`),
+  getDecision: (stationId) => request(`/decision${withStation({}, stationId)}`),
+  logDecision: (stationId) =>
+    request(`/decision/log${withStation({}, stationId)}`, { method: "POST" }),
+  getHistory: (limit = 20, stationId) => request(`/history${withStation({ limit }, stationId)}`),
   getScenarios: () => request("/scenarios"),
   setScenario: (scenario) =>
     request("/scenario", { method: "POST", body: JSON.stringify({ scenario }) }),

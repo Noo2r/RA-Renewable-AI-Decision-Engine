@@ -105,3 +105,146 @@ def test_decision_log_preserves_required_fields(client):
     logged = log_resp["logged"]
     required = {"action", "expected_kwh", "expected_value_egp", "co2_avoided_kg", "explanation", "score", "timestamp"}
     assert required.issubset(logged.keys())
+
+
+# ---------------------------------------------------------------------------
+# Part 1: multi-station API tests
+# ---------------------------------------------------------------------------
+
+def test_stations_endpoint_returns_exactly_three(client):
+    resp = client.get("/stations")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["default_station_id"] == "hybrid-01"
+    assert len(body["stations"]) == 3
+    ids = {s["id"] for s in body["stations"]}
+    assert ids == {"solar-01", "wind-01", "hybrid-01"}
+    for s in body["stations"]:
+        assert "data_source" in s and s["data_source"] == "synthetic"
+
+
+def test_state_without_station_id_uses_hybrid_01(client):
+    resp = client.get("/state")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["station_id"] == "hybrid-01"
+    assert body["energy_type"] == "hybrid"
+
+
+@pytest.mark.parametrize("station_id", ["solar-01", "wind-01", "hybrid-01"])
+def test_state_works_for_every_valid_station(client, station_id):
+    resp = client.get(f"/state?station_id={station_id}")
+    assert resp.status_code == 200
+    assert resp.json()["station_id"] == station_id
+
+
+def test_state_invalid_station_returns_404(client):
+    resp = client.get("/state?station_id=not-a-real-station")
+    assert resp.status_code == 404
+
+
+def test_forecast_is_station_aware(client):
+    solar = client.get("/forecast?station_id=solar-01&hours=3").json()
+    wind = client.get("/forecast?station_id=wind-01&hours=3").json()
+    assert solar["station_id"] == "solar-01"
+    assert wind["station_id"] == "wind-01"
+    assert solar["forecast"][0]["forecast_surplus_kw"] != wind["forecast"][0]["forecast_surplus_kw"]
+
+
+def test_decision_is_station_aware(client):
+    solar = client.get("/decision?station_id=solar-01").json()
+    wind = client.get("/decision?station_id=wind-01").json()
+    assert solar["station_id"] == "solar-01"
+    assert wind["station_id"] == "wind-01"
+
+
+def test_decision_log_saves_station_id(client):
+    resp = client.post("/decision/log?station_id=solar-01")
+    assert resp.status_code == 200
+    assert resp.json()["station_id"] == "solar-01"
+
+
+def test_history_filters_by_station_isolation(client):
+    """A decision logged for solar-01 must not appear in wind-01's history."""
+    client.post("/decision/log?station_id=solar-01")
+    client.post("/decision/log?station_id=wind-01")
+
+    solar_history = client.get("/history?station_id=solar-01").json()
+    wind_history = client.get("/history?station_id=wind-01").json()
+
+    assert all(d["station_id"] == "solar-01" for d in solar_history["decisions"])
+    assert all(d["station_id"] == "wind-01" for d in wind_history["decisions"])
+    assert len(solar_history["decisions"]) == 1
+    assert len(wind_history["decisions"]) == 1
+
+
+def test_hybrid_decision_log_preserves_all_existing_fields(client):
+    resp = client.post("/decision/log?station_id=hybrid-01")
+    logged = resp.json()["logged"]
+    required = {"action", "expected_kwh", "expected_value_egp", "co2_avoided_kg", "explanation", "score", "timestamp"}
+    assert required.issubset(logged.keys())
+
+
+# ---------------------------------------------------------------------------
+# Part 1: global clock / scenario shared across stations
+# ---------------------------------------------------------------------------
+
+def test_tick_advances_all_stations_to_the_same_index_and_timestamp(client):
+    client.post("/tick", json={"steps": 3})
+    solar = client.get("/state?station_id=solar-01").json()
+    wind = client.get("/state?station_id=wind-01").json()
+    hybrid = client.get("/state?station_id=hybrid-01").json()
+
+    assert solar["current_index"] == wind["current_index"] == hybrid["current_index"]
+    assert solar["reading"]["timestamp"] == wind["reading"]["timestamp"] == hybrid["reading"]["timestamp"]
+
+
+def test_scenario_change_applies_to_every_station(client):
+    client.post("/scenario", json={"scenario": "high_demand"})
+    for station_id in ("solar-01", "wind-01", "hybrid-01"):
+        body = client.get(f"/state?station_id={station_id}").json()
+        assert body["scenario"] == "high_demand"
+
+
+def test_resetting_same_scenario_reproduces_same_station_sequences(client):
+    client.post("/scenario", json={"scenario": "cloudy"})
+    client.post("/tick", json={"steps": 6})
+    first_pass = {
+        sid: client.get(f"/state?station_id={sid}").json()["reading"]
+        for sid in ("solar-01", "wind-01", "hybrid-01")
+    }
+
+    client.post("/scenario", json={"scenario": "sunny"})  # switch away
+    client.post("/scenario", json={"scenario": "cloudy"})  # switch back (resets index)
+    client.post("/tick", json={"steps": 6})  # replay the same advance
+    second_pass = {
+        sid: client.get(f"/state?station_id={sid}").json()["reading"]
+        for sid in ("solar-01", "wind-01", "hybrid-01")
+    }
+
+    for sid in first_pass:
+        assert first_pass[sid]["solar_kw"] == second_pass[sid]["solar_kw"]
+        assert first_pass[sid]["demand_kw"] == second_pass[sid]["demand_kw"]
+
+
+# ---------------------------------------------------------------------------
+# Part 1: national summary
+# ---------------------------------------------------------------------------
+
+def test_national_summary_totals_equal_sum_of_stations(client):
+    resp = client.get("/national/summary")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["station_count"] == 3
+
+    stations = body["stations"]
+    assert abs(sum(s["generation_kw"] for s in stations) - body["totals"]["generation_kw"]) < 0.05
+    assert abs(sum(s["demand_kw"] for s in stations) - body["totals"]["demand_kw"]) < 0.05
+    expected_net = body["totals"]["generation_kw"] - body["totals"]["demand_kw"]
+    assert abs(expected_net - body["totals"]["net_balance_kw"]) < 0.05
+
+
+def test_national_summary_weighted_battery_soc_is_bounded(client):
+    body = client.get("/national/summary").json()
+    assert 0 <= body["battery"]["weighted_soc_pct"] <= 100
+    assert body["battery"]["total_capacity_kwh"] == 35.0 + 35.0 + 50.0  # solar-01 + wind-01 + hybrid-01

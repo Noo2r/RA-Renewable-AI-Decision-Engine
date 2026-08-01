@@ -14,6 +14,8 @@ const SCENARIO_LABELS = {
 
 export default function App() {
   const [scenarios, setScenarios] = useState([]);
+  const [stations, setStations] = useState([]);
+  const [stationId, setStationId] = useState(null); // null -> backend defaults to hybrid-01
   const [state, setState] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [decision, setDecision] = useState(null);
@@ -24,13 +26,15 @@ export default function App() {
   const [autoPlay, setAutoPlay] = useState(false);
   const intervalRef = useRef(null);
 
+  const selectedStation = stations.find((s) => s.id === stationId);
+
   const refreshAll = useCallback(async () => {
     try {
       const [s, f, d, h] = await Promise.all([
-        api.getState(),
-        api.getForecast(6),
-        api.getDecision(),
-        api.getHistory(20),
+        api.getState(stationId),
+        api.getForecast(6, stationId),
+        api.getDecision(stationId),
+        api.getHistory(20, stationId),
       ]);
       setState(s);
       setForecast(f);
@@ -40,10 +44,20 @@ export default function App() {
     } catch (e) {
       setError(e.message);
     }
-  }, []);
+  }, [stationId]);
 
   useEffect(() => {
     api.getScenarios().then((r) => setScenarios(r.scenarios)).catch(() => {});
+    api
+      .getStations()
+      .then((r) => {
+        setStations(r.stations);
+        setStationId(r.default_station_id);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     refreshAll();
   }, [refreshAll]);
 
@@ -69,6 +83,11 @@ export default function App() {
     await refreshAll();
   };
 
+  const handleStationChange = (id) => {
+    setLastLogged(null);
+    setStationId(id);
+  };
+
   const handleTick = async (steps) => {
     await api.tick(steps);
     await refreshAll();
@@ -77,9 +96,9 @@ export default function App() {
   const handleExecute = async () => {
     setExecuting(true);
     try {
-      const res = await api.logDecision();
+      const res = await api.logDecision(stationId);
       setLastLogged(res);
-      const h = await api.getHistory(20);
+      const h = await api.getHistory(20, stationId);
       setHistory(h.decisions);
     } finally {
       setExecuting(false);
@@ -93,9 +112,27 @@ export default function App() {
           <h1 className="text-xl font-bold">RA — Renewable AI Decision Engine</h1>
           <p className="text-sm text-slate-400">
             Turning renewable surplus into explainable, automated decisions.
+            {selectedStation && (
+              <span className="text-slate-300">
+                {" "}
+                — {selectedStation.name} <span className="text-slate-500">({selectedStation.energy_type})</span>
+              </span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={stationId || ""}
+            onChange={(e) => handleStationChange(e.target.value)}
+            className="text-xs px-3 py-1.5 rounded-full border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
+          >
+            {stations.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <span className="w-px h-5 bg-slate-800" />
           {scenarios.map((s) => (
             <button
               key={s}

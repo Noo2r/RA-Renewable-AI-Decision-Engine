@@ -19,6 +19,8 @@ backend/ra.db-journal
 *.db-journal
 *.db.bak
 *_backup_*.db
+*.pre_stations_backup_*
+*_migration_test*
 
 # Notebook execution artifacts (keep the authored notebook, not re-run copies)
 notebook/.ipynb_checkpoints/
