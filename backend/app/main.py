@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -125,12 +125,17 @@ def get_state(station_id: str = DEFAULT_STATION_ID):
 
 
 @app.get("/forecast")
-def get_forecast(station_id: str = DEFAULT_STATION_ID, hours: float = 6.0):
+def get_forecast(station_id: str = DEFAULT_STATION_ID, hours: float = Query(default=6.0, ge=1, le=6)):
+    """Station-aware component forecast (solar/wind/demand, each with an
+    empirical uncertainty interval + model-confidence score), plus the
+    original forecast_surplus_kw/actual_surplus_kw fields the decision
+    engine and older clients rely on. hours is limited to the project's
+    supported 1-6 hour horizon (enforced by FastAPI's Query validation)."""
     station = _resolve_station(station_id)
     with db.get_conn() as conn:
         scenario, idx = db.get_sim_state(conn)
         all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
-    result = forecast_surplus(all_rows, idx)
+    result = forecast_surplus(all_rows, idx, station_id=station.id)
     max_steps = max(1, int(hours * 60 / result["interval_minutes"]))
     result["forecast"] = result["forecast"][:max_steps]
     result["scenario"] = scenario
@@ -147,7 +152,7 @@ def get_decision(station_id: str = DEFAULT_STATION_ID):
             raise HTTPException(404, "No data for current scenario")
         all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
         future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
-    fc = forecast_surplus(all_rows, idx)
+    fc = forecast_surplus(all_rows, idx, station_id=station.id)
     future_prices = [r["price_egp"] for r in future_rows]
     result = evaluate(reading, fc["forecast"], future_prices, battery_capacity_kwh=station.battery_capacity_kwh)
     result["scenario"] = scenario
@@ -164,7 +169,7 @@ def log_decision(station_id: str = DEFAULT_STATION_ID):
             raise HTTPException(404, "No data for current scenario")
         all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
         future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
-        fc = forecast_surplus(all_rows, idx)
+        fc = forecast_surplus(all_rows, idx, station_id=station.id)
         future_prices = [r["price_egp"] for r in future_rows]
         result = evaluate(reading, fc["forecast"], future_prices, battery_capacity_kwh=station.battery_capacity_kwh)
         recommended = {**result["recommended"], "timestamp": result["timestamp"]}

@@ -11,11 +11,17 @@ def _rows(scenario="sunny"):
 
 def test_forecast_output_shape():
     result = forecast_surplus(_rows(), DEFAULT_START_INDEX)
+    # Top-level shape is unchanged from Part 0/1 (still exactly these 4 keys).
     assert set(result.keys()) == {"interval_minutes", "history", "forecast", "model_quality"}
     assert 0 < len(result["forecast"]) <= FORECAST_HORIZON_STEPS
     assert len(result["history"]) > 0
+    # Part 2 note: forecast points now carry many additive component/interval/
+    # confidence fields (see test_forecast_components.py), so this only
+    # checks that the original backward-compatible fields are still present,
+    # not that they are the *only* fields (that strict Part 0/1 check is no
+    # longer meaningful once fields are added additively by design).
     for point in result["forecast"]:
-        assert set(point.keys()) == {"timestamp", "forecast_surplus_kw", "actual_surplus_kw"}
+        assert {"timestamp", "forecast_surplus_kw", "actual_surplus_kw"}.issubset(point.keys())
 
 
 def test_model_quality_is_reported_and_nonnegative():

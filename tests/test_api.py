@@ -248,3 +248,86 @@ def test_national_summary_weighted_battery_soc_is_bounded(client):
     body = client.get("/national/summary").json()
     assert 0 <= body["battery"]["weighted_soc_pct"] <= 100
     assert body["battery"]["total_capacity_kwh"] == 35.0 + 35.0 + 50.0  # solar-01 + wind-01 + hybrid-01
+
+
+# ---------------------------------------------------------------------------
+# Part 2: component forecast + confidence API
+# ---------------------------------------------------------------------------
+
+def test_forecast_includes_component_fields(client):
+    body = client.get("/forecast?hours=6").json()
+    p = body["forecast"][0]
+    required = {
+        "solar_kw", "solar_lower_kw", "solar_upper_kw", "solar_confidence_pct", "solar_method",
+        "wind_kw", "wind_lower_kw", "wind_upper_kw", "wind_confidence_pct", "wind_method",
+        "generation_kw", "generation_lower_kw", "generation_upper_kw", "generation_confidence_pct",
+        "demand_kw", "demand_lower_kw", "demand_upper_kw", "demand_confidence_pct",
+        "net_balance_kw", "net_balance_lower_kw", "net_balance_upper_kw", "net_balance_confidence_pct",
+        "horizon_hour",
+    }
+    assert required.issubset(p.keys())
+
+
+def test_forecast_preserves_existing_fields(client):
+    body = client.get("/forecast?hours=6").json()
+    p = body["forecast"][0]
+    assert {"timestamp", "forecast_surplus_kw", "actual_surplus_kw"}.issubset(p.keys())
+    assert set(body.keys()) >= {"interval_minutes", "history", "forecast", "model_quality", "scenario"}
+
+
+@pytest.mark.parametrize("station_id", ["solar-01", "wind-01", "hybrid-01"])
+def test_forecast_works_for_all_stations(client, station_id):
+    resp = client.get(f"/forecast?station_id={station_id}&hours=3")
+    assert resp.status_code == 200
+    assert resp.json()["station_id"] == station_id
+
+
+def test_forecast_defaults_to_hybrid_01(client):
+    body = client.get("/forecast?hours=1").json()
+    assert body["station_id"] == "hybrid-01"
+
+
+def test_forecast_invalid_station_returns_404(client):
+    resp = client.get("/forecast?station_id=not-a-station&hours=1")
+    assert resp.status_code == 404
+
+
+@pytest.mark.parametrize("hours", [0, -1, 7, 100])
+def test_forecast_invalid_horizon_is_rejected(client, hours):
+    resp = client.get(f"/forecast?hours={hours}")
+    assert resp.status_code == 422
+
+
+def test_forecast_valid_horizons_1_through_6_all_work(client):
+    for hours in range(1, 7):
+        resp = client.get(f"/forecast?hours={hours}")
+        assert resp.status_code == 200
+
+
+def test_model_quality_contains_component_metrics_and_methods(client):
+    mq = client.get("/forecast?hours=6").json()["model_quality"]
+    required = {
+        "solar_mae_kw", "wind_mae_kw", "generation_mae_kw", "demand_mae_kw", "net_balance_mae_kw",
+        "validation_method", "interval_method", "interval_nominal_coverage_pct",
+    }
+    assert required.issubset(mq.keys())
+    assert mq["validation_method"] == "chronological_holdout"
+    assert mq["interval_method"] == "empirical_residual_quantiles"
+    assert mq["interval_nominal_coverage_pct"] == 80
+
+
+def test_solar_only_station_forecast_has_structural_zero_wind(client):
+    body = client.get("/forecast?station_id=solar-01&hours=6").json()
+    for p in body["forecast"]:
+        assert p["wind_method"] == "structural_zero"
+        assert p["wind_kw"] == 0.0
+    assert body["model_quality"]["wind_mae_kw"] is None
+
+
+def test_decision_endpoint_still_works_after_component_forecast_change(client):
+    resp = client.get("/decision")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["recommended"]["action"] in {"battery_charge", "water_pumping", "sell_grid", "curtail"}
+    actions = {a["action"] for a in body["ranked_actions"]}
+    assert actions.issubset({"battery_charge", "water_pumping", "sell_grid", "curtail"})
