@@ -13,6 +13,17 @@ IMPORTANT -- these are demo stations, not real facilities:
   * All capacities, demand, and battery figures are synthetic values
     chosen to be in the same scale as the original single-station MVP.
   * Nothing in this module represents official plant data.
+
+Part 3 note: battery *operating* fields (charge/discharge rate limits,
+min/max SoC, round-trip efficiencies) are added here so the decision
+engine can compute physically valid charge/discharge amounts per station.
+All three stations use the same simple, documented demo assumptions: a
+0.5C charge/discharge rate (empties or fills in ~2 hours), a 10-95%
+usable SoC band, and 95% efficiency in each direction (matching the
+existing BATTERY_CHARGE_EFFICIENCY/BATTERY_DISCHARGE_EFFICIENCY constants
+already used by the synthetic generator's SoC simulation). No battery
+degradation, cycle-counting, temperature effects, state-of-health
+estimation, or multiple batteries per station are modeled.
 """
 from dataclasses import dataclass
 
@@ -39,6 +50,21 @@ class StationConfig:
     demand_scale: float
     seed_offset: int
 
+    # --- Part 3: battery operating constraints ------------------------
+    battery_charge_limit_kw: float
+    battery_discharge_limit_kw: float
+    battery_min_soc_pct: float
+    battery_max_soc_pct: float
+    battery_charge_efficiency: float
+    battery_discharge_efficiency: float
+
+    def __post_init__(self):
+        assert 0 <= self.battery_min_soc_pct < self.battery_max_soc_pct <= 100, self.id
+        assert 0 < self.battery_charge_efficiency <= 1, self.id
+        assert 0 < self.battery_discharge_efficiency <= 1, self.id
+        assert self.battery_charge_limit_kw >= 0, self.id
+        assert self.battery_discharge_limit_kw >= 0, self.id
+
     def public_dict(self) -> dict:
         """Fields safe to expose over the API (excludes seed_offset)."""
         return {
@@ -50,6 +76,12 @@ class StationConfig:
             "solar_capacity_kw": self.solar_capacity_kw,
             "wind_capacity_kw": self.wind_capacity_kw,
             "battery_capacity_kwh": self.battery_capacity_kwh,
+            "battery_charge_limit_kw": self.battery_charge_limit_kw,
+            "battery_discharge_limit_kw": self.battery_discharge_limit_kw,
+            "battery_min_soc_pct": self.battery_min_soc_pct,
+            "battery_max_soc_pct": self.battery_max_soc_pct,
+            "battery_charge_efficiency": self.battery_charge_efficiency,
+            "battery_discharge_efficiency": self.battery_discharge_efficiency,
             "data_source": "synthetic",
         }
 
@@ -66,6 +98,22 @@ class UnknownStationError(KeyError):
 
 
 DEFAULT_STATION_ID = "hybrid-01"
+
+# Shared Part 3 battery-operating demo assumptions (documented above):
+# 0.5C charge/discharge rate, 10-95% usable SoC band, 95% round-trip
+# efficiency each way -- identical across all three stations for
+# simplicity; only battery_capacity_kwh (and therefore the absolute kW
+# rate) differs per station.
+_BATTERY_MIN_SOC_PCT = 10.0
+_BATTERY_MAX_SOC_PCT = 95.0
+_BATTERY_CHARGE_EFFICIENCY = 0.95
+_BATTERY_DISCHARGE_EFFICIENCY = 0.95
+
+
+def _rate_kw(capacity_kwh: float) -> float:
+    """0.5C: the battery can fully charge/discharge in about 2 hours."""
+    return capacity_kwh * 0.5
+
 
 # Registration order doubles as the display order for GET /stations.
 # Capacities/demand_scale/battery for hybrid-01 intentionally match the
@@ -85,6 +133,12 @@ _STATIONS: dict[str, StationConfig] = {
         battery_capacity_kwh=35.0,
         demand_scale=0.6,
         seed_offset=101,
+        battery_charge_limit_kw=_rate_kw(35.0),
+        battery_discharge_limit_kw=_rate_kw(35.0),
+        battery_min_soc_pct=_BATTERY_MIN_SOC_PCT,
+        battery_max_soc_pct=_BATTERY_MAX_SOC_PCT,
+        battery_charge_efficiency=_BATTERY_CHARGE_EFFICIENCY,
+        battery_discharge_efficiency=_BATTERY_DISCHARGE_EFFICIENCY,
     ),
     "wind-01": StationConfig(
         id="wind-01",
@@ -97,6 +151,12 @@ _STATIONS: dict[str, StationConfig] = {
         battery_capacity_kwh=35.0,
         demand_scale=0.55,
         seed_offset=202,
+        battery_charge_limit_kw=_rate_kw(35.0),
+        battery_discharge_limit_kw=_rate_kw(35.0),
+        battery_min_soc_pct=_BATTERY_MIN_SOC_PCT,
+        battery_max_soc_pct=_BATTERY_MAX_SOC_PCT,
+        battery_charge_efficiency=_BATTERY_CHARGE_EFFICIENCY,
+        battery_discharge_efficiency=_BATTERY_DISCHARGE_EFFICIENCY,
     ),
     "hybrid-01": StationConfig(
         id="hybrid-01",
@@ -109,6 +169,12 @@ _STATIONS: dict[str, StationConfig] = {
         battery_capacity_kwh=50.0,
         demand_scale=1.0,
         seed_offset=0,
+        battery_charge_limit_kw=_rate_kw(50.0),
+        battery_discharge_limit_kw=_rate_kw(50.0),
+        battery_min_soc_pct=_BATTERY_MIN_SOC_PCT,
+        battery_max_soc_pct=_BATTERY_MAX_SOC_PCT,
+        battery_charge_efficiency=_BATTERY_CHARGE_EFFICIENCY,
+        battery_discharge_efficiency=_BATTERY_DISCHARGE_EFFICIENCY,
     ),
 }
 

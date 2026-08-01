@@ -331,3 +331,63 @@ def test_decision_endpoint_still_works_after_component_forecast_change(client):
     assert body["recommended"]["action"] in {"battery_charge", "water_pumping", "sell_grid", "curtail"}
     actions = {a["action"] for a in body["ranked_actions"]}
     assert actions.issubset({"battery_charge", "water_pumping", "sell_grid", "curtail"})
+
+
+# ---------------------------------------------------------------------------
+# Part 3: surplus/deficit decision engine API
+# ---------------------------------------------------------------------------
+
+def test_decision_endpoint_includes_mode_priority_and_before_after(client):
+    body = client.get("/decision").json()
+    assert body["mode"] in ("surplus", "deficit")
+    assert body["priority"] in ("critical", "high", "medium", "normal")
+    for key in ("before", "after"):
+        assert key in body
+        assert "net_balance_kw" in body[key]
+        assert "battery_soc_pct" in body[key]
+    assert "remaining_deficit_kw" in body
+    assert "decision_interval_minutes" in body
+    assert body["decision_interval_minutes"] == 60
+
+
+def test_decision_endpoint_is_station_aware_for_battery_constraints(client):
+    # hybrid-01 (50 kWh) and solar-01 (35 kWh) have different battery
+    # capacities/rate limits, so the decision must reflect the requested
+    # station's own config, not a hardcoded default.
+    hybrid = client.get("/decision?station_id=hybrid-01").json()
+    solar = client.get("/decision?station_id=solar-01").json()
+    assert hybrid["station_id"] == "hybrid-01"
+    assert solar["station_id"] == "solar-01"
+
+
+def test_high_demand_scenario_produces_deficit_mode_with_battery_discharge(client):
+    """Deterministic demo scenario check (Step 20): the existing
+    high_demand scenario, advanced into the evening, must reach deficit
+    mode with battery_discharge/grid_import recommended for hybrid-01 --
+    no new scenario is required to demonstrate the deficit path."""
+    client.post("/scenario", json={"scenario": "high_demand"})
+    client.post("/tick", json={"steps": 28})  # roughly +7h from 10:00 start
+    body = client.get("/decision?station_id=hybrid-01").json()
+    assert body["mode"] == "deficit"
+    assert body["recommended"]["action"] in ("battery_discharge", "grid_import")
+
+
+def test_decision_log_preserves_deficit_specific_fields(client):
+    client.post("/scenario", json={"scenario": "high_demand"})
+    client.post("/tick", json={"steps": 28})
+    log_resp = client.post("/decision/log?station_id=hybrid-01")
+    assert log_resp.status_code == 200
+    logged = log_resp.json()["logged"]
+    assert "mode" in logged
+    assert "priority" in logged
+
+
+def test_history_returns_new_part3_fields(client):
+    client.post("/scenario", json={"scenario": "high_demand"})
+    client.post("/tick", json={"steps": 28})
+    client.post("/decision/log?station_id=hybrid-01")
+    history = client.get("/history?station_id=hybrid-01").json()
+    assert len(history["decisions"]) >= 1
+    entry = history["decisions"][0]
+    for key in ("mode", "priority", "amount_kw", "before_net_balance_kw", "after_net_balance_kw"):
+        assert key in entry

@@ -47,9 +47,41 @@ CREATE TABLE IF NOT EXISTS decisions (
     co2_avoided_kg REAL NOT NULL,
     explanation TEXT NOT NULL,
     score REAL NOT NULL,
-    logged_at TEXT NOT NULL
+    logged_at TEXT NOT NULL,
+    mode TEXT,
+    priority TEXT,
+    amount_kw REAL,
+    before_net_balance_kw REAL,
+    before_battery_soc_pct REAL,
+    after_net_balance_kw REAL,
+    after_battery_soc_pct REAL,
+    remaining_deficit_kw REAL,
+    secondary_action TEXT,
+    secondary_amount_kw REAL,
+    expected_cost_egp REAL,
+    co2_emitted_kg REAL,
+    decision_interval_minutes INTEGER
 );
 """
+
+# Part 3: surplus/deficit decision-audit columns added to `decisions`.
+# Plain ALTER TABLE ADD COLUMN suffices for all of these -- none of them
+# participate in a UNIQUE constraint, unlike the Part 1 readings migration.
+_DECISION_NEW_COLUMNS = [
+    ("mode", "TEXT"),
+    ("priority", "TEXT"),
+    ("amount_kw", "REAL"),
+    ("before_net_balance_kw", "REAL"),
+    ("before_battery_soc_pct", "REAL"),
+    ("after_net_balance_kw", "REAL"),
+    ("after_battery_soc_pct", "REAL"),
+    ("remaining_deficit_kw", "REAL"),
+    ("secondary_action", "TEXT"),
+    ("secondary_amount_kw", "REAL"),
+    ("expected_cost_egp", "REAL"),
+    ("co2_emitted_kg", "REAL"),
+    ("decision_interval_minutes", "INTEGER"),
+]
 
 
 @contextmanager
@@ -135,10 +167,34 @@ def _migrate_add_station_support(conn):
         conn.execute("DROP TABLE readings_old")
 
 
+def _migrate_add_decision_fields(conn):
+    """Idempotent additive migration (Part 3): adds the surplus/deficit
+    decision-audit columns to `decisions`. Historical (pre-Part-3) rows are
+    backfilled with mode='surplus' -- the only mode that existed before
+    this migration -- while the other new columns are left NULL for those
+    rows, since we genuinely don't have before/after/priority data for
+    decisions logged before this feature existed. A no-op on an
+    already-migrated or freshly-created (already Part-3-shaped) database.
+    """
+    missing = [name for name, _ in _DECISION_NEW_COLUMNS if not _column_exists(conn, "decisions", name)]
+    if not missing:
+        return
+
+    _backup_before_migration()
+
+    for name, sql_type in _DECISION_NEW_COLUMNS:
+        if name in missing:
+            conn.execute(f"ALTER TABLE decisions ADD COLUMN {name} {sql_type}")
+
+    if "mode" in missing:
+        conn.execute("UPDATE decisions SET mode = 'surplus' WHERE mode IS NULL")
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
         _migrate_add_station_support(conn)
+        _migrate_add_decision_fields(conn)
 
 
 def clear_station_scenario_readings(conn, station_id: str, scenario: str):
@@ -213,11 +269,27 @@ def count_readings(conn, station_id: str, scenario: str) -> int:
 
 
 def insert_decision(conn, station_id: str, scenario: str, decision: dict):
+    """decision may be a plain Part 0/1-shaped dict (action/expected_kwh/
+    expected_value_egp/co2_avoided_kg/explanation/score/timestamp only) or
+    the richer Part 3 shape additionally carrying mode/priority/before/
+    after/remaining_deficit_kw/secondary_action/secondary_amount_kw/
+    amount_kw/expected_cost_egp/co2_emitted_kg/decision_interval_minutes.
+    All new columns are read defensively via .get() so older-shaped callers
+    (and old tests) keep working -- they just log NULL/default values for
+    the fields they don't have, same convention as the historical-row
+    migration backfill.
+    """
+    before = decision.get("before") or {}
+    after = decision.get("after") or {}
     conn.execute(
         """INSERT INTO decisions
            (station_id, scenario, timestamp, action, expected_kwh, expected_value_egp,
-            co2_avoided_kg, explanation, score, logged_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            co2_avoided_kg, explanation, score, logged_at,
+            mode, priority, amount_kw, before_net_balance_kw, before_battery_soc_pct,
+            after_net_balance_kw, after_battery_soc_pct, remaining_deficit_kw,
+            secondary_action, secondary_amount_kw, expected_cost_egp, co2_emitted_kg,
+            decision_interval_minutes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             station_id,
             scenario,
@@ -228,6 +300,19 @@ def insert_decision(conn, station_id: str, scenario: str, decision: dict):
             decision["co2_avoided_kg"],
             decision["explanation"],
             decision["score"],
+            decision.get("mode", "surplus"),
+            decision.get("priority", "normal"),
+            decision.get("amount_kw"),
+            before.get("net_balance_kw"),
+            before.get("battery_soc_pct"),
+            after.get("net_balance_kw"),
+            after.get("battery_soc_pct"),
+            decision.get("remaining_deficit_kw", 0.0),
+            decision.get("secondary_action"),
+            decision.get("secondary_amount_kw", 0.0),
+            decision.get("expected_cost_egp", 0.0),
+            decision.get("co2_emitted_kg", 0.0),
+            decision.get("decision_interval_minutes", 60),
         ),
     )
     return conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]

@@ -64,3 +64,51 @@ def test_seed_offsets_are_stable_explicit_integers_not_hash():
     # hybrid-01 must be offset 0 so the default station reproduces the
     # exact Part 0 baseline (see ra_core/data_generator.py).
     assert get_station("hybrid-01").seed_offset == 0
+
+
+# ---------------------------------------------------------------------------
+# Part 3: battery operating constraints
+# ---------------------------------------------------------------------------
+
+def test_every_station_has_valid_battery_constraints():
+    for station in list_stations():
+        assert 0 <= station.battery_min_soc_pct < station.battery_max_soc_pct <= 100
+        assert 0 < station.battery_charge_efficiency <= 1
+        assert 0 < station.battery_discharge_efficiency <= 1
+        assert station.battery_charge_limit_kw >= 0
+        assert station.battery_discharge_limit_kw >= 0
+
+
+def test_battery_rate_limits_scale_with_capacity():
+    for station in list_stations():
+        assert station.battery_charge_limit_kw == station.battery_capacity_kwh * 0.5
+        assert station.battery_discharge_limit_kw == station.battery_capacity_kwh * 0.5
+
+
+def test_invalid_battery_soc_bounds_are_rejected():
+    from dataclasses import replace
+
+    station = get_station("hybrid-01")
+    with pytest.raises(AssertionError):
+        replace(station, battery_min_soc_pct=95.0, battery_max_soc_pct=10.0)
+
+
+def test_invalid_battery_efficiency_is_rejected():
+    from dataclasses import replace
+
+    station = get_station("hybrid-01")
+    with pytest.raises(AssertionError):
+        replace(station, battery_charge_efficiency=0.0)
+    with pytest.raises(AssertionError):
+        replace(station, battery_discharge_efficiency=1.5)
+
+
+def test_public_dict_includes_battery_fields():
+    station = get_station("hybrid-01")
+    d = station.public_dict()
+    required = {
+        "battery_charge_limit_kw", "battery_discharge_limit_kw",
+        "battery_min_soc_pct", "battery_max_soc_pct",
+        "battery_charge_efficiency", "battery_discharge_efficiency",
+    }
+    assert required.issubset(d.keys())

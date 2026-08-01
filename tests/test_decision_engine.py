@@ -54,12 +54,21 @@ def test_high_price_favors_sell_grid_over_water_pumping():
     assert result["recommended"]["action"] == "sell_grid"
 
 
-def test_curtail_is_sole_action_on_deficit():
+def test_deficit_mode_ranks_only_battery_discharge_and_grid_import():
+    # Part 3: deficit no longer falls back to "curtail" -- it gets its own
+    # two actions. BASE's battery_soc=50.0 is well above the default min
+    # SoC (10.0), so battery_discharge is feasible and, with the default
+    # (unconstrained) battery/rate defaults, fully covers this 13 kW deficit.
     deficit_current = {**BASE, "solar_kw": 2.0, "demand_kw": 15.0}
     result = evaluate(deficit_current, [{"forecast_surplus_kw": -13.0}] * 4, FLAT_PRICES)
     actions = [a["action"] for a in result["ranked_actions"]]
-    assert actions == ["curtail"]
-    assert result["recommended"]["expected_value_egp"] == 0.0
+    assert set(actions) == {"battery_discharge", "grid_import"}
+    assert result["mode"] == "deficit"
+    assert result["recommended"]["action"] == "battery_discharge"
+    assert result["remaining_deficit_kw"] == 0.0
+    assert result["secondary_action"] is None
+    # curtail must not appear at all in deficit mode
+    assert "curtail" not in actions
 
 
 def test_curtail_always_present_as_fallback_when_surplus_exists():

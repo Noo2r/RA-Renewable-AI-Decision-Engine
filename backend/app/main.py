@@ -56,6 +56,44 @@ def _station_fields(station: StationConfig) -> dict:
     }
 
 
+def _evaluate_for_station(station: StationConfig, reading: dict, forecast_points: list[dict],
+                           future_prices: list[float]) -> dict:
+    """evaluate() call site shared by /decision and /decision/log -- passes
+    the requested station's full battery configuration (capacity, rate
+    limits, min/max SoC, efficiencies) so surplus AND deficit math is
+    correct for that specific station, not just the default's."""
+    return evaluate(
+        reading, forecast_points, future_prices,
+        battery_capacity_kwh=station.battery_capacity_kwh,
+        battery_charge_limit_kw=station.battery_charge_limit_kw,
+        battery_discharge_limit_kw=station.battery_discharge_limit_kw,
+        battery_min_soc_pct=station.battery_min_soc_pct,
+        battery_max_soc_pct=station.battery_max_soc_pct,
+        battery_charge_efficiency=station.battery_charge_efficiency,
+        battery_discharge_efficiency=station.battery_discharge_efficiency,
+    )
+
+
+def _log_record(result: dict) -> dict:
+    """Flattens the top-level decision metadata (mode, priority, before/
+    after, remaining deficit, secondary action, decision interval) onto the
+    recommended action dict, for both the /decision/log response and what
+    gets persisted to SQLite. Nested before/after dicts are kept nested
+    here (the DB layer flattens them into scalar columns itself)."""
+    return {
+        **result["recommended"],
+        "timestamp": result["timestamp"],
+        "mode": result["mode"],
+        "priority": result["priority"],
+        "decision_interval_minutes": result["decision_interval_minutes"],
+        "before": result["before"],
+        "after": result["after"],
+        "remaining_deficit_kw": result["remaining_deficit_kw"],
+        "secondary_action": result["secondary_action"],
+        "secondary_amount_kw": result["secondary_amount_kw"],
+    }
+
+
 @app.get("/scenarios")
 def list_scenarios():
     return {"scenarios": SCENARIOS}
@@ -154,7 +192,7 @@ def get_decision(station_id: str = DEFAULT_STATION_ID):
         future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
     fc = forecast_surplus(all_rows, idx, station_id=station.id)
     future_prices = [r["price_egp"] for r in future_rows]
-    result = evaluate(reading, fc["forecast"], future_prices, battery_capacity_kwh=station.battery_capacity_kwh)
+    result = _evaluate_for_station(station, reading, fc["forecast"], future_prices)
     result["scenario"] = scenario
     result.update(_station_fields(station))
     return result
@@ -171,8 +209,8 @@ def log_decision(station_id: str = DEFAULT_STATION_ID):
         future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
         fc = forecast_surplus(all_rows, idx, station_id=station.id)
         future_prices = [r["price_egp"] for r in future_rows]
-        result = evaluate(reading, fc["forecast"], future_prices, battery_capacity_kwh=station.battery_capacity_kwh)
-        recommended = {**result["recommended"], "timestamp": result["timestamp"]}
+        result = _evaluate_for_station(station, reading, fc["forecast"], future_prices)
+        recommended = _log_record(result)
         record_id = db.insert_decision(conn, station.id, scenario, recommended)
     return {"id": record_id, "scenario": scenario, "logged": recommended, **_station_fields(station)}
 
