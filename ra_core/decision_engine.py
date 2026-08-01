@@ -54,6 +54,34 @@ DEFAULT_BATTERY_MAX_SOC_PCT = 95.0
 DEFICIT_CRITICAL_RATIO = 0.30   # remaining deficit >= 30% of demand -> critical
 SURPLUS_SIGNIFICANT_RATIO = 0.50  # surplus >= 50% of demand -> "medium" (needs decisive allocation)
 
+# Part 4 -- map/overview status is a direct, deterministic relabeling of the
+# decision engine's own `priority` (see _priority() above), NOT a new model
+# and NOT equipment health/failure/anomaly/maintenance status. It exists
+# purely so the Egypt map dashboard has a 3-color (green/yellow/red) summary
+# of "how urgently does this station's current recommendation need
+# attention" -- exactly what priority already encodes.
+STATUS_BY_PRIORITY = {
+    "normal": "normal",
+    "medium": "warning",
+    "high": "critical",
+    "critical": "critical",
+}
+STATUS_LABELS = {
+    "normal": "Normal",
+    "warning": "Warning",
+    "critical": "Critical",
+    "unknown": "Unknown",
+}
+UNKNOWN_STATUS = "unknown"
+
+
+def status_from_priority(priority: str) -> str:
+    """Deterministic priority -> map-status mapping. Any priority value not
+    in STATUS_BY_PRIORITY (there is none today; this only guards future
+    drift) maps to the explicit "unknown" status rather than silently
+    defaulting to "normal" or crashing."""
+    return STATUS_BY_PRIORITY.get(priority, UNKNOWN_STATUS)
+
 
 def _avg(values, default=0.0):
     values = [v for v in values if v is not None]

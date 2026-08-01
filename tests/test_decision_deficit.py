@@ -286,3 +286,38 @@ def test_normal_surplus_is_normal_or_medium():
     big_surplus_current = {**BASE, "solar_kw": 40.0, "demand_kw": 10.0}
     big_surplus = evaluate(big_surplus_current, surplus_forecast(30.0), FLAT_PRICES, **BATTERY_KW)
     assert big_surplus["priority"] == "medium"  # 30/10 = 300% >= 50% threshold
+
+
+# ---------------------------------------------------------------------------
+# Part 4: priority -> map status mapping
+# ---------------------------------------------------------------------------
+
+def test_normal_priority_maps_to_normal_status():
+    from ra_core.decision_engine import status_from_priority
+    assert status_from_priority("normal") == "normal"
+
+
+def test_medium_priority_maps_to_warning_status():
+    from ra_core.decision_engine import status_from_priority
+    assert status_from_priority("medium") == "warning"
+
+
+def test_high_priority_maps_to_critical_status():
+    from ra_core.decision_engine import status_from_priority
+    assert status_from_priority("high") == "critical"
+
+
+def test_critical_priority_maps_to_critical_status():
+    from ra_core.decision_engine import status_from_priority
+    assert status_from_priority("critical") == "critical"
+
+
+def test_unknown_priority_maps_to_explicit_unknown_status():
+    from ra_core.decision_engine import status_from_priority, UNKNOWN_STATUS
+    assert status_from_priority("not_a_real_priority") == UNKNOWN_STATUS == "unknown"
+
+
+def test_status_labels_cover_every_status_value():
+    from ra_core.decision_engine import STATUS_BY_PRIORITY, STATUS_LABELS, UNKNOWN_STATUS
+    for status in set(STATUS_BY_PRIORITY.values()) | {UNKNOWN_STATUS}:
+        assert status in STATUS_LABELS

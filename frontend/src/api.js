@@ -20,6 +20,7 @@ function withStation(params, stationId) {
 
 export const api = {
   getStations: () => request("/stations"),
+  getStationsOverview: () => request("/stations/overview"),
   getState: (stationId) => request(`/state${withStation({}, stationId)}`),
   getForecast: (hours = 6, stationId) => request(`/forecast${withStation({ hours }, stationId)}`),
   getDecision: (stationId) => request(`/decision${withStation({}, stationId)}`),

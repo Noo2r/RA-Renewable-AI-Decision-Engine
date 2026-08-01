@@ -391,3 +391,160 @@ def test_history_returns_new_part3_fields(client):
     entry = history["decisions"][0]
     for key in ("mode", "priority", "amount_kw", "before_net_balance_kw", "after_net_balance_kw"):
         assert key in entry
+
+
+# ---------------------------------------------------------------------------
+# Part 4: /stations/overview (Egypt map dashboard)
+# ---------------------------------------------------------------------------
+
+_OVERVIEW_REQUIRED_FIELDS = {
+    "station_id", "name", "energy_type", "latitude", "longitude",
+    "scenario", "current_index", "timestamp",
+    "generation_kw", "demand_kw", "net_balance_kw", "battery_soc_pct",
+    "mode", "priority", "recommended_action", "status", "status_label",
+}
+
+_HEALTH_LIKE_FIELDS = {
+    "health_score", "health", "anomaly", "anomaly_score", "anomaly_probability",
+    "maintenance", "maintenance_due", "failure_probability", "failure_risk",
+}
+
+
+def test_overview_returns_exactly_three_stations(client):
+    body = client.get("/stations/overview").json()
+    assert len(body["stations"]) == 3
+    ids = {s["station_id"] for s in body["stations"]}
+    assert ids == {"solar-01", "wind-01", "hybrid-01"}
+
+
+def test_overview_returns_all_required_map_fields(client):
+    body = client.get("/stations/overview").json()
+    for s in body["stations"]:
+        assert _OVERVIEW_REQUIRED_FIELDS.issubset(s.keys())
+
+
+def test_overview_does_not_contain_health_anomaly_or_maintenance_fields(client):
+    body = client.get("/stations/overview").json()
+    for s in body["stations"]:
+        assert not (_HEALTH_LIKE_FIELDS & set(s.keys()))
+
+
+def test_overview_uses_each_stations_configured_lat_lon(client):
+    from ra_core.stations import list_stations
+
+    body = client.get("/stations/overview").json()
+    by_id = {s["station_id"]: s for s in body["stations"]}
+    for station in list_stations():
+        assert by_id[station.id]["latitude"] == station.latitude
+        assert by_id[station.id]["longitude"] == station.longitude
+
+
+def test_overview_shares_one_timestamp_across_stations(client):
+    body = client.get("/stations/overview").json()
+    timestamps = {s["timestamp"] for s in body["stations"]}
+    assert len(timestamps) == 1
+    assert body["timestamp"] in timestamps
+
+
+def test_overview_matches_state_values_per_station(client):
+    for station_id in ("solar-01", "wind-01", "hybrid-01"):
+        state = client.get(f"/state?station_id={station_id}").json()
+        overview = client.get("/stations/overview").json()
+        entry = next(s for s in overview["stations"] if s["station_id"] == station_id)
+        assert entry["generation_kw"] == state["generation_kw"]
+        assert entry["demand_kw"] == state["reading"]["demand_kw"]
+        assert entry["battery_soc_pct"] == round(state["reading"]["battery_soc"], 1)
+
+
+def test_overview_matches_decision_mode_priority_and_action(client):
+    for station_id in ("solar-01", "wind-01", "hybrid-01"):
+        decision = client.get(f"/decision?station_id={station_id}").json()
+        overview = client.get("/stations/overview").json()
+        entry = next(s for s in overview["stations"] if s["station_id"] == station_id)
+        assert entry["mode"] == decision["mode"]
+        assert entry["priority"] == decision["priority"]
+        assert entry["recommended_action"] == decision["recommended"]["action"]
+
+
+def test_overview_updates_after_global_tick(client):
+    before = client.get("/stations/overview").json()
+    client.post("/tick", json={"steps": 4})
+    after = client.get("/stations/overview").json()
+    assert after["current_index"] == before["current_index"] + 4
+    assert after["timestamp"] != before["timestamp"]
+
+
+def test_overview_updates_after_scenario_change(client):
+    # Every scenario resets to the same DEFAULT_START_INDEX/timestamp, so
+    # index/timestamp alone don't prove a refresh -- the `scenario` field
+    # and the underlying per-station generation numbers (which depend on
+    # the scenario's own weather parameters) are the real signal.
+    client.post("/scenario", json={"scenario": "high_demand"})
+    hd = client.get("/stations/overview").json()
+    assert hd["scenario"] == "high_demand"
+
+    client.post("/scenario", json={"scenario": "windy"})
+    windy = client.get("/stations/overview").json()
+    assert windy["scenario"] == "windy"
+    assert all(s["scenario"] == "windy" for s in windy["stations"])
+
+    hd_generation = {s["station_id"]: s["generation_kw"] for s in hd["stations"]}
+    windy_generation = {s["station_id"]: s["generation_kw"] for s in windy["stations"]}
+    assert hd_generation != windy_generation
+
+
+def test_overview_is_deterministic_for_a_fixed_scenario_index(client):
+    client.post("/scenario", json={"scenario": "sunny"})
+    first = client.get("/stations/overview").json()
+    second = client.get("/stations/overview").json()
+    assert first == second
+
+
+def test_overview_priority_and_status_are_consistent(client):
+    from ra_core.decision_engine import status_from_priority
+
+    body = client.get("/stations/overview").json()
+    for s in body["stations"]:
+        assert s["status"] == status_from_priority(s["priority"])
+
+
+# ---------------------------------------------------------------------------
+# Part 4: existing behavior regression (must be unaffected by the map work)
+# ---------------------------------------------------------------------------
+
+def test_stations_endpoint_unchanged_by_part4(client):
+    body = client.get("/stations").json()
+    assert body["default_station_id"] == "hybrid-01"
+    assert len(body["stations"]) == 3
+
+
+def test_national_summary_still_aggregation_only(client):
+    body = client.get("/national/summary").json()
+    assert set(body.keys()) == {"scenario", "current_index", "timestamp", "station_count", "totals", "battery", "stations"}
+    assert "status" not in body and "priority" not in body
+
+
+def test_decision_endpoint_unaffected_by_overview_endpoint(client):
+    body = client.get("/decision?station_id=wind-01").json()
+    assert "mode" in body and "priority" in body and "recommended" in body
+
+
+def test_invalid_station_still_404_for_existing_endpoints(client):
+    assert client.get("/state?station_id=nope").status_code == 404
+    assert client.get("/decision?station_id=nope").status_code == 404
+    assert client.get("/forecast?station_id=nope").status_code == 404
+
+
+def test_forecast_intervals_and_confidence_unchanged(client):
+    body = client.get("/forecast?hours=6").json()
+    assert body["model_quality"]["validation_method"] == "chronological_holdout"
+    assert body["model_quality"]["interval_method"] == "empirical_residual_quantiles"
+
+
+def test_history_isolation_unaffected_by_part4(client):
+    client.post("/decision/log?station_id=solar-01")
+    client.post("/decision/log?station_id=wind-01")
+    solar_history = client.get("/history?station_id=solar-01").json()
+    wind_history = client.get("/history?station_id=wind-01").json()
+    assert all(d["station_id"] == "solar-01" for d in solar_history["decisions"])
+    assert all(d["station_id"] == "wind-01" for d in wind_history["decisions"])

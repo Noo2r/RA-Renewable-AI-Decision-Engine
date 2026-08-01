@@ -4,6 +4,7 @@ import StatusPanel from "./components/StatusPanel.jsx";
 import ForecastChart from "./components/ForecastChart.jsx";
 import DecisionCard from "./components/DecisionCard.jsx";
 import HistoryTimeline from "./components/HistoryTimeline.jsx";
+import EgyptMap from "./components/EgyptMap.jsx";
 
 const SCENARIO_LABELS = {
   sunny: "Sunny Day",
@@ -25,8 +26,27 @@ export default function App() {
   const [lastLogged, setLastLogged] = useState(null);
   const [autoPlay, setAutoPlay] = useState(false);
   const intervalRef = useRef(null);
+  const [overview, setOverview] = useState([]);
+  const [overviewError, setOverviewError] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
 
   const selectedStation = stations.find((s) => s.id === stationId);
+
+  // Map overview is independent of which single station is selected (it
+  // covers all three stations at once), so it deliberately does NOT depend
+  // on stationId -- selecting a station only changes which marker is
+  // highlighted, it never triggers a new /stations/overview request.
+  const refreshOverview = useCallback(async () => {
+    try {
+      const r = await api.getStationsOverview();
+      setOverview(r.stations);
+      setOverviewError(null);
+    } catch (e) {
+      setOverviewError(e.message);
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
 
   const refreshAll = useCallback(async () => {
     try {
@@ -55,7 +75,8 @@ export default function App() {
         setStationId(r.default_station_id);
       })
       .catch(() => {});
-  }, []);
+    refreshOverview();
+  }, [refreshOverview]);
 
   useEffect(() => {
     refreshAll();
@@ -69,18 +90,20 @@ export default function App() {
           setAutoPlay(false);
         }
         refreshAll();
+        refreshOverview();
       }, 2500);
     } else if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
     return () => intervalRef.current && clearInterval(intervalRef.current);
-  }, [autoPlay, refreshAll]);
+  }, [autoPlay, refreshAll, refreshOverview]);
 
   const handleScenario = async (scenario) => {
     setAutoPlay(false);
     setLastLogged(null);
     await api.setScenario(scenario);
     await refreshAll();
+    await refreshOverview();
   };
 
   const handleStationChange = (id) => {
@@ -91,6 +114,7 @@ export default function App() {
   const handleTick = async (steps) => {
     await api.tick(steps);
     await refreshAll();
+    await refreshOverview();
   };
 
   const handleExecute = async () => {
@@ -156,6 +180,15 @@ export default function App() {
       )}
 
       <StatusPanel state={state} />
+
+      <EgyptMap
+        stations={overview}
+        selectedStationId={stationId}
+        onSelectStation={handleStationChange}
+        loading={overviewLoading}
+        error={overviewError}
+        onRetry={refreshOverview}
+      />
 
       <div className="flex items-center gap-3">
         <button

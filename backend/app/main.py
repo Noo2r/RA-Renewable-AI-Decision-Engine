@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from app import db
 from app.config import DEFAULT_START_INDEX, SCENARIOS
 from app.seed import seed_all
-from ra_core.decision_engine import evaluate
+from ra_core.decision_engine import evaluate, status_from_priority, STATUS_LABELS
 from ra_core.forecasting import forecast_surplus
 from ra_core.stations import DEFAULT_STATION_ID, StationConfig, UnknownStationError, get_station, list_stations
 
@@ -104,6 +104,64 @@ def get_stations():
     return {
         "default_station_id": DEFAULT_STATION_ID,
         "stations": [s.public_dict() for s in list_stations()],
+    }
+
+
+@app.get("/stations/overview")
+def stations_overview():
+    """One current operational snapshot per registered station, for the
+    Egypt map dashboard (Part 4). Reuses the exact same shared-clock +
+    forecast_surplus() + evaluate() call path already used by /state and
+    /decision (via _evaluate_for_station) -- this endpoint performs no
+    independent calculation of its own. `status`/`status_label` are a
+    deterministic relabeling of the decision engine's own `priority`
+    (see ra_core.decision_engine.status_from_priority): this is an
+    operational "how urgently does this station's current recommendation
+    need attention" indicator, NOT equipment health, failure probability,
+    anomaly status, or maintenance status.
+
+    All stations share one global scenario and simulated clock (Part 1),
+    so every entry here is evaluated at the same scenario/index and
+    therefore carries the same timestamp.
+    """
+    stations = list_stations()
+    overview = []
+    with db.get_conn() as conn:
+        scenario, idx = db.get_sim_state(conn)
+        for station in stations:
+            reading = db.get_reading_at(conn, station.id, scenario, idx)
+            if reading is None:
+                raise HTTPException(404, f"No data for station '{station.id}' at current scenario/index")
+            all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
+            future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
+            fc = forecast_surplus(all_rows, idx, station_id=station.id)
+            future_prices = [r["price_egp"] for r in future_rows]
+            result = _evaluate_for_station(station, reading, fc["forecast"], future_prices)
+            status = status_from_priority(result["priority"])
+            overview.append({
+                "station_id": station.id,
+                "name": station.name,
+                "energy_type": station.energy_type,
+                "latitude": station.latitude,
+                "longitude": station.longitude,
+                "scenario": scenario,
+                "current_index": idx,
+                "timestamp": reading["timestamp"],
+                "generation_kw": round(reading["solar_kw"] + reading["wind_kw"], 2),
+                "demand_kw": round(reading["demand_kw"], 2),
+                "net_balance_kw": result["net_balance_kw"],
+                "battery_soc_pct": round(reading["battery_soc"], 1),
+                "mode": result["mode"],
+                "priority": result["priority"],
+                "recommended_action": result["recommended"]["action"],
+                "status": status,
+                "status_label": STATUS_LABELS.get(status, "Unknown"),
+            })
+    return {
+        "scenario": scenario,
+        "current_index": idx,
+        "timestamp": overview[0]["timestamp"] if overview else None,
+        "stations": overview,
     }
 
 
