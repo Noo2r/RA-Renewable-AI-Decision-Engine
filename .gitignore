@@ -1,0 +1,36 @@
+# Python
+backend/venv/
+notebook/venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+node_modules/
+
+# Databases (dev data + backups, never committed)
+backend/ra.db
+backend/ra.db-journal
+*.db
+*.db-journal
+*.db.bak
+*_backup_*.db
+
+# Notebook execution artifacts (keep the authored notebook, not re-run copies)
+notebook/.ipynb_checkpoints/
+notebook/*_executed.ipynb
+.ipynb_checkpoints/
+
+# Secrets / environment files
+.env
+.env.*
+*.env
+!.env.example
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
