@@ -109,21 +109,24 @@ def generate_series(
     # --- Battery state of charge: simulate physically plausible trace --
     battery_capacity_kwh = station.battery_capacity_kwh
     soc = np.zeros(TOTAL_POINTS)
-    current_soc = 50.0
-    dt_h = INTERVAL_MINUTES / 60
-    surplus_kw = solar_kw + wind_kw - demand_kw
-    for i in range(TOTAL_POINTS):
-        s = surplus_kw[i]
-        if s > 0:
-            headroom_kwh = battery_capacity_kwh * (1 - current_soc / 100)
-            charge_kwh = min(s * dt_h * BATTERY_CHARGE_EFFICIENCY, headroom_kwh)
-            current_soc += (charge_kwh / battery_capacity_kwh) * 100
-        else:
-            available_kwh = battery_capacity_kwh * (current_soc / 100)
-            discharge_kwh = min(-s * dt_h / BATTERY_DISCHARGE_EFFICIENCY, available_kwh)
-            current_soc -= (discharge_kwh / battery_capacity_kwh) * 100
-        current_soc = float(np.clip(current_soc, 2, 98))
-        soc[i] = current_soc
+    if battery_capacity_kwh > 0:
+        current_soc = 50.0
+        dt_h = INTERVAL_MINUTES / 60
+        surplus_kw = solar_kw + wind_kw - demand_kw
+        for i in range(TOTAL_POINTS):
+            s = surplus_kw[i]
+            if s > 0:
+                headroom_kwh = battery_capacity_kwh * (1 - current_soc / 100)
+                charge_kwh = min(s * dt_h * BATTERY_CHARGE_EFFICIENCY, headroom_kwh)
+                current_soc += (charge_kwh / battery_capacity_kwh) * 100
+            else:
+                available_kwh = battery_capacity_kwh * (current_soc / 100)
+                discharge_kwh = min(-s * dt_h / BATTERY_DISCHARGE_EFFICIENCY, available_kwh)
+                current_soc -= (discharge_kwh / battery_capacity_kwh) * 100
+            current_soc = float(np.clip(current_soc, 2, 98))
+            soc[i] = current_soc
+    # else: no battery configured at this station -- soc stays 0 for every
+    # reading (nothing to simulate storing), instead of dividing by zero.
 
     df = pd.DataFrame({
         "timestamp": [t.isoformat() for t in timestamps],

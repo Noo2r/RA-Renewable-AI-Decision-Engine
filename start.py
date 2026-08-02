@@ -118,6 +118,14 @@ def wait_until_ready(check_fn, timeout: float, label: str, proc: subprocess.Pope
     return False
 
 
+def assistant_mode() -> str:
+    """Never prints the key itself -- only whether the (opt-in, disabled by
+    default) LLM rewrite pass is turned on. Mirrors
+    backend/app/llm_adapter.py's own enabled-check exactly."""
+    enabled = os.environ.get("RA_ASSISTANT_LLM_ENABLED", "").strip().lower() in ("1", "true", "yes")
+    return "LLM rewrite enabled (falls back to offline deterministic on any failure)" if enabled else "offline deterministic"
+
+
 def open_browser(url: str):
     try:
         opened = webbrowser.open(url)
@@ -195,11 +203,17 @@ def main():
         print()
         open_browser(FRONTEND_URL)
 
+        # Display as "localhost" regardless of the literal bind HOST
+        # (127.0.0.1) -- both resolve to the same place, and this matches
+        # the URLs users actually type/click.
+        display_backend_url = f"http://localhost:{BACKEND_PORT}"
+        display_frontend_url = f"http://localhost:{FRONTEND_PORT}"
         print()
-        print("RA is running:")
-        print(f"  Frontend:  {FRONTEND_URL}")
-        print(f"  Backend:   {BACKEND_URL}")
-        print(f"  API docs:  {BACKEND_URL}/docs")
+        print(f"RA backend ready: {display_backend_url}")
+        print(f"RA API docs: {display_backend_url}/docs")
+        print(f"RA dashboard ready: {display_frontend_url}")
+        print(f"Assistant mode: {assistant_mode()}")
+        print("Map mode: offline local GeoJSON")
         print()
         print("Press Ctrl+C to stop.")
 

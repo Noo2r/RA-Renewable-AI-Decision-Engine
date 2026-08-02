@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -93,6 +93,16 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
   const [runContext, setRunContext] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Invalidates an in-flight /simulate response if the station changes (or
+  // another run starts) before it resolves -- otherwise a slow response for
+  // a station the user has already navigated away from could land after
+  // the station-change effect below has already cleared this panel, and
+  // overwrite it with a result that no longer matches what's on screen.
+  const requestIdRef = useRef(0);
+  // Synchronous guard: React state updates aren't synchronous, so two
+  // handleRun() calls fired in the same tick would both still read
+  // `loading` as false from the same stale render. A ref blocks the second.
+  const loadingRef = useRef(false);
 
   // Report the current, non-stale What-If inputs (or null) up to the
   // parent so the Assistant panel (Part 6) can ground explain_what_if
@@ -122,6 +132,7 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
   // Station itself changed -- the sliders' meaning (applicability, base
   // capacities) no longer matches what's on screen, so reset everything.
   useEffect(() => {
+    requestIdRef.current++; // invalidate any in-flight /simulate for the previous station
     setInputs({ solar: 0, wind: 0, demand: 0, battery: 0 });
     setResult(null);
     setRunContext(null);
@@ -152,6 +163,9 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
   };
 
   const handleRun = async () => {
+    if (loadingRef.current) return; // a simulation is already in flight -- ignore a double-click
+    loadingRef.current = true;
+    const myId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -163,16 +177,20 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
         battery_capacity_change_pct: inputs.battery,
       };
       const r = await api.simulateWhatIf(body);
+      if (myId !== requestIdRef.current) return; // superseded by a station change or another run
       setResult(r);
       setRunContext({ scenario: r.scenario, currentIndex: r.current_index, inputs: { ...inputs } });
     } catch (e) {
+      if (myId !== requestIdRef.current) return;
       setError(e.message);
     } finally {
-      setLoading(false);
+      loadingRef.current = false;
+      if (myId === requestIdRef.current) setLoading(false);
     }
   };
 
   const handleReset = () => {
+    requestIdRef.current++; // invalidate any in-flight /simulate started before Reset was clicked
     setInputs({ solar: 0, wind: 0, demand: 0, battery: 0 });
     setResult(null);
     setRunContext(null);

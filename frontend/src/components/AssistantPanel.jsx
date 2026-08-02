@@ -43,6 +43,18 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
   const [error, setError] = useState(null);
   const [stale, setStale] = useState(false);
   const isFirstRender = useRef(true);
+  // Invalidates an in-flight /assistant/query response if the grounding
+  // context changes (or a new question is asked) before it resolves --
+  // otherwise a slow response for a station/scenario/index the user has
+  // already navigated away from could land after the context-change effect
+  // below has already cleared this panel, overwriting it with an answer
+  // that no longer matches what's grounded on screen.
+  const requestIdRef = useRef(0);
+  // React state updates aren't synchronous, so two ask() calls fired back
+  // to back in the same tick (e.g. mashing Enter) would both still read
+  // `loading` as false from the same stale render and both proceed. A ref
+  // is read/written synchronously, so it actually blocks the second call.
+  const loadingRef = useRef(false);
 
   // Grounding-context change (station/scenario/index/What-If inputs) --
   // clear the previous answer rather than leave it looking current.
@@ -60,6 +72,7 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
         askedContext.currentIndex !== currentIndex ||
         !whatIfInputsEqual(askedContext.whatIfInputs, whatIfInputs))
     ) {
+      requestIdRef.current++; // invalidate any in-flight query grounded in the old context
       setAnswer(null);
       setAskedContext(null);
       setError(null);
@@ -69,8 +82,11 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
   }, [stationId, scenario, currentIndex, whatIfInputs]);
 
   const ask = async (text) => {
+    if (loadingRef.current) return; // a request is already in flight -- ignore Enter/click double-fire
     const trimmed = (text ?? question).trim();
     if (!trimmed) return;
+    loadingRef.current = true;
+    const myId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     setStale(false);
@@ -78,12 +94,15 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
       const body = { station_id: stationId, question: trimmed };
       if (whatIfInputs) body.what_if_inputs = whatIfInputs;
       const r = await api.assistantQuery(body);
+      if (myId !== requestIdRef.current) return; // superseded by a context change or another ask
       setAnswer(r);
       setAskedContext({ stationId, scenario, currentIndex, whatIfInputs });
     } catch (e) {
+      if (myId !== requestIdRef.current) return;
       setError(e.message);
     } finally {
-      setLoading(false);
+      loadingRef.current = false;
+      if (myId === requestIdRef.current) setLoading(false);
     }
   };
 
@@ -93,6 +112,7 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
   };
 
   const handleClear = () => {
+    requestIdRef.current++; // invalidate any in-flight query started before Clear was clicked
     setQuestion("");
     setAnswer(null);
     setAskedContext(null);

@@ -1,4 +1,8 @@
 """Baseline tests for ra_core.data_generator: determinism + scenario variety."""
+from dataclasses import replace
+
+import numpy as np
+
 from ra_core.config import DEFAULT_START_INDEX, SCENARIOS, TOTAL_POINTS
 from ra_core.data_generator import generate_series
 from ra_core.stations import DEFAULT_STATION_ID, STATION_IDS, get_station
@@ -104,3 +108,21 @@ def test_scenario_characteristics_preserved_per_station():
         sunny = generate_series("sunny", station_id=station_id).iloc[136]
         high_demand = generate_series("high_demand", station_id=station_id).iloc[136]
         assert high_demand.demand_kw > sunny.demand_kw
+
+
+# ---------------------------------------------------------------------------
+# Part 7A: numerical safety
+# ---------------------------------------------------------------------------
+
+def test_zero_battery_capacity_does_not_crash():
+    """A station with no configured battery (battery_capacity_kwh == 0) is
+    unreachable via the public What-If API (its range floor is -50%), but
+    ra_core.data_generator is also called directly (notebook, future
+    callers) with an arbitrary StationConfig. The SoC simulation loop
+    divides by battery_capacity_kwh -- previously unconditionally, which
+    raised ZeroDivisionError for any zero-capacity station. Regression test
+    for that fix: soc must stay a finite, in-range constant instead."""
+    station = replace(get_station(DEFAULT_STATION_ID), battery_capacity_kwh=0.0)
+    df = generate_series("sunny", station_id=station)
+    assert np.isfinite(df["battery_soc"]).all()
+    assert (df["battery_soc"] == 0).all()

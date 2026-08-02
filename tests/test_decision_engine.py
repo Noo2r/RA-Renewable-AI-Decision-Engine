@@ -85,6 +85,44 @@ def test_evaluate_without_battery_capacity_arg_still_works():
     assert result["recommended"]["action"] in {"battery_charge", "water_pumping", "sell_grid", "curtail"}
 
 
+def test_zero_battery_capacity_excludes_charge_in_surplus_mode():
+    """Mirrors test_decision_deficit.test_zero_capacity_battery_makes_discharge_infeasible
+    but for the surplus/battery_charge side -- previously only the deficit
+    side had direct coverage of battery_capacity_kwh == 0."""
+    result = evaluate(BASE, FLAT_FORECAST, FLAT_PRICES, battery_capacity_kwh=0.0)
+    actions = [a["action"] for a in result["ranked_actions"]]
+    assert "battery_charge" not in actions
+    assert result["recommended"]["action"] in {"water_pumping", "sell_grid", "curtail"}
+
+
+def test_zero_demand_does_not_raise_or_produce_nan():
+    """demand_kw == 0.0 exercises the max(demand_kw, 1e-6) guard in
+    _priority() -- must not raise ZeroDivisionError or return NaN."""
+    result = evaluate({**BASE, "demand_kw": 0.0}, FLAT_FORECAST, FLAT_PRICES)
+    assert result["priority"] in {"normal", "medium", "high", "critical"}
+    assert result["recommended"]["score"] == result["recommended"]["score"]  # not NaN
+
+
+def test_zero_generation_full_deficit_recommends_grid_import():
+    """solar_kw == wind_kw == 0.0: no generation at all, mode must be
+    deficit and grid_import must be feasible (battery may or may not be)."""
+    current = {**BASE, "solar_kw": 0.0, "wind_kw": 0.0, "demand_kw": 10.0, "battery_soc": 5.0}
+    result = evaluate(current, [{"forecast_surplus_kw": -10.0}] * 4, FLAT_PRICES)
+    assert result["mode"] == "deficit"
+    actions = [a["action"] for a in result["ranked_actions"]]
+    assert "grid_import" in actions
+    assert result["remaining_deficit_kw"] == 0.0
+
+
+def test_empty_forecast_points_falls_back_to_instantaneous_surplus():
+    """forecast_points=[] happens at dataset end (no future rows left).
+    near_term must fall back to [] and avg_surplus_next_hour to the
+    instantaneous surplus_kw, not raise IndexError/KeyError."""
+    result = evaluate(BASE, [], FLAT_PRICES)
+    assert result["avg_surplus_next_hour_kw"] == result["surplus_kw"]
+    assert result["recommended"]["action"] in {"battery_charge", "water_pumping", "sell_grid", "curtail"}
+
+
 def test_smaller_battery_capacity_reduces_charge_headroom():
     # A much smaller battery should cap expected_kwh for battery_charge lower
     # than the default (50 kWh) battery would, given identical inputs.

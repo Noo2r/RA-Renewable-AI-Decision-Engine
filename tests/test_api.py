@@ -831,3 +831,63 @@ def test_history_remains_station_isolated_after_part6(client):
     wind_history = client.get("/history?station_id=wind-01").json()
     assert all(d["station_id"] == "solar-01" for d in solar_history["decisions"])
     assert all(d["station_id"] == "wind-01" for d in wind_history["decisions"])
+
+
+# ---------------------------------------------------------------------------
+# Part 7A: numerical + API safety
+# ---------------------------------------------------------------------------
+
+def test_history_on_never_logged_station_returns_empty_list_not_error(client):
+    """A fresh DB (or a station nobody has logged a decision for yet) must
+    return a clean 200 with an empty list, not a crash."""
+    resp = client.get("/history?station_id=wind-01")
+    assert resp.status_code == 200
+    assert resp.json()["decisions"] == []
+
+
+def _assert_no_nan_or_inf(resp):
+    import json as _json
+    assert "NaN" not in resp.text and "Infinity" not in resp.text, resp.text[:200]
+    _json.loads(resp.text)  # raises if a non-finite float actually leaked through
+
+
+def test_no_nan_or_infinity_across_core_endpoints(client):
+    """Sweep every read endpoint the dashboard depends on and confirm no
+    response body ever contains a raw NaN/Infinity token (Python's json
+    module emits those bare, non-standard-JSON tokens for float('nan')/
+    float('inf') instead of raising, so a naive endpoint could otherwise
+    silently ship invalid JSON to the frontend)."""
+    for station_id in ("solar-01", "wind-01", "hybrid-01"):
+        _assert_no_nan_or_inf(client.get(f"/state?station_id={station_id}"))
+        _assert_no_nan_or_inf(client.get(f"/forecast?station_id={station_id}&hours=6"))
+        _assert_no_nan_or_inf(client.get(f"/decision?station_id={station_id}"))
+        _assert_no_nan_or_inf(client.get(f"/history?station_id={station_id}"))
+    _assert_no_nan_or_inf(client.get("/stations/overview"))
+    _assert_no_nan_or_inf(client.get("/national/summary"))
+    _assert_no_nan_or_inf(client.post("/simulate", json={"station_id": "hybrid-01", "solar_capacity_change_pct": 50}))
+    _assert_no_nan_or_inf(client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "What is happening now?"}))
+
+
+def test_decision_log_error_responses_do_not_expose_stack_traces(client):
+    resp = client.get("/decision?station_id=does-not-exist")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert list(body.keys()) == ["detail"]
+    assert "Traceback" not in resp.text and ".py" not in resp.text
+
+
+def test_simulate_never_writes_a_decision_to_history(client):
+    """/simulate is read-only -- repeated calls must never create history rows."""
+    before = client.get("/history?station_id=hybrid-01").json()["decisions"]
+    for _ in range(3):
+        client.post("/simulate", json={"station_id": "hybrid-01", "demand_change_pct": 10})
+    after = client.get("/history?station_id=hybrid-01").json()["decisions"]
+    assert before == after
+
+
+def test_assistant_query_never_writes_a_decision_to_history(client):
+    """/assistant/query is read-only -- asking questions must never create history rows."""
+    before = client.get("/history?station_id=hybrid-01").json()["decisions"]
+    client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "Why was this decision selected?"})
+    after = client.get("/history?station_id=hybrid-01").json()["decisions"]
+    assert before == after
