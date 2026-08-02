@@ -1,9 +1,9 @@
 function Stat({ label, value, sub, accent }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-1">
-      <span className="text-xs uppercase tracking-wide text-slate-400">{label}</span>
-      <span className={`text-2xl font-semibold ${accent || "text-slate-100"}`}>{value}</span>
-      {sub && <span className="text-xs text-slate-500">{sub}</span>}
+    <div className="bg-ra-surface border border-ra-border-soft rounded-xl p-4 flex flex-col gap-1 hover:border-ra-border transition">
+      <span className="text-xs uppercase tracking-wide text-ra-text-muted">{label}</span>
+      <span className={`text-2xl font-semibold ${accent || "text-ra-text"}`}>{value}</span>
+      {sub && <span className="text-xs text-ra-text-muted">{sub}</span>}
     </div>
   );
 }

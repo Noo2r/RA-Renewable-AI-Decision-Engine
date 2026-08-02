@@ -137,16 +137,19 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 px-4 md:px-10 py-6 flex flex-col gap-6">
+    <div className="min-h-screen text-ra-text px-4 md:px-10 py-6 flex flex-col gap-6">
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">RA — Renewable AI Decision Engine</h1>
-          <p className="text-sm text-slate-400">
+          <h1 className="text-xl font-bold tracking-tight">
+            <span className="text-ra-primary drop-shadow-[0_0_10px_var(--ra-primary-glow)]">RA</span>
+            <span className="text-ra-text"> — Renewable AI Decision Engine</span>
+          </h1>
+          <p className="text-sm text-ra-text-secondary">
             Turning renewable surplus into explainable, automated decisions.
             {selectedStation && (
-              <span className="text-slate-300">
+              <span className="text-ra-text-secondary">
                 {" "}
-                — {selectedStation.name} <span className="text-slate-500">({selectedStation.energy_type})</span>
+                — {selectedStation.name} <span className="text-ra-text-muted">({selectedStation.energy_type})</span>
               </span>
             )}
           </p>
@@ -155,7 +158,7 @@ export default function App() {
           <select
             value={stationId || ""}
             onChange={(e) => handleStationChange(e.target.value)}
-            className="text-xs px-3 py-1.5 rounded-full border border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
+            className="text-xs px-3 py-1.5 rounded-full border border-ra-border bg-ra-surface text-ra-text-secondary hover:border-ra-primary-dark transition"
           >
             {stations.map((s) => (
               <option key={s.id} value={s.id}>
@@ -163,15 +166,15 @@ export default function App() {
               </option>
             ))}
           </select>
-          <span className="w-px h-5 bg-slate-800" />
+          <span className="w-px h-5 bg-ra-border" />
           {scenarios.map((s) => (
             <button
               key={s}
               onClick={() => handleScenario(s)}
               className={`text-xs px-3 py-1.5 rounded-full border transition ${
                 state?.scenario === s
-                  ? "bg-indigo-600 border-indigo-500 text-white"
-                  : "border-slate-700 text-slate-300 hover:border-slate-500"
+                  ? "bg-ra-primary border-ra-primary-strong text-ra-bg font-semibold shadow-[0_0_10px_var(--ra-primary-glow)]"
+                  : "border-ra-border text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-text"
               }`}
             >
               {SCENARIO_LABELS[s] || s}
@@ -200,13 +203,13 @@ export default function App() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => handleTick(1)}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500"
+          className="text-xs px-3 py-1.5 rounded-lg border border-ra-border text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-text transition"
         >
           Advance 15 min
         </button>
         <button
           onClick={() => handleTick(4)}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500"
+          className="text-xs px-3 py-1.5 rounded-lg border border-ra-border text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-text transition"
         >
           Advance 1 hour
         </button>
@@ -214,8 +217,8 @@ export default function App() {
           onClick={() => setAutoPlay((p) => !p)}
           className={`text-xs px-3 py-1.5 rounded-lg border transition ${
             autoPlay
-              ? "bg-emerald-600 border-emerald-500 text-white"
-              : "border-slate-700 text-slate-300 hover:border-slate-500"
+              ? "bg-ra-primary border-ra-primary-strong text-ra-bg font-semibold shadow-[0_0_10px_var(--ra-primary-glow)]"
+              : "border-ra-border text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-text"
           }`}
         >
           {autoPlay ? "Pause Auto-Advance" : "Play Auto-Advance"}

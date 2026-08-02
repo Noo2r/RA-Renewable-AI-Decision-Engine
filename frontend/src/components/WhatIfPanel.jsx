@@ -25,11 +25,15 @@ const MODE_STYLES = {
   deficit: "bg-rose-950 text-rose-300 border-rose-800",
 };
 
+// Matches DecisionCard's ascending warm-intensity gradient (normal=
+// neutral, medium=soft gold, high=amber, critical=red) for the same four
+// raw priority values, kept distinct from the map's simplified 3-color
+// status.
 const PRIORITY_STYLES = {
   critical: "bg-rose-950 text-rose-300 border-rose-800",
   high: "bg-amber-950 text-amber-300 border-amber-800",
-  medium: "bg-sky-950 text-sky-300 border-sky-800",
-  normal: "bg-slate-800 text-slate-300 border-slate-700",
+  medium: "bg-yellow-950 text-yellow-300 border-yellow-800",
+  normal: "bg-ra-surface-hover text-ra-text-secondary border-ra-border",
 };
 
 const SLIDERS = [
@@ -57,17 +61,17 @@ function fmtDelta(v, unit) {
   return `${sign}${v.toFixed(1)} ${unit}`;
 }
 function deltaColor(v, higherIsBetter = true) {
-  if (typeof v !== "number" || Math.abs(v) < 0.05) return "text-slate-400";
+  if (typeof v !== "number" || Math.abs(v) < 0.05) return "text-ra-text-muted";
   const positive = higherIsBetter ? v > 0 : v < 0;
   return positive ? "text-emerald-400" : "text-rose-400";
 }
 
 function Row({ label, baseline, hypothetical, delta, deltaGood = true }) {
   return (
-    <div className="grid grid-cols-4 gap-2 text-xs py-1.5 border-b border-slate-800/60 last:border-0">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-300 text-right">{baseline}</span>
-      <span className="text-slate-100 text-right font-medium">{hypothetical}</span>
+    <div className="grid grid-cols-4 gap-2 text-xs py-1.5 border-b border-ra-border-soft last:border-0">
+      <span className="text-ra-text-muted">{label}</span>
+      <span className="text-ra-text-secondary text-right">{baseline}</span>
+      <span className="text-ra-primary text-right font-medium">{hypothetical}</span>
       <span className={`text-right ${deltaColor(delta, deltaGood)}`}>
         {typeof delta === "number" ? fmtDelta(delta, "") : delta}
       </span>
@@ -75,7 +79,7 @@ function Row({ label, baseline, hypothetical, delta, deltaGood = true }) {
   );
 }
 
-function Badge({ value, styles, fallback = "border-slate-700 text-slate-300" }) {
+function Badge({ value, styles, fallback = "border-ra-border text-ra-text-secondary" }) {
   return (
     <span className={`text-[10px] px-2 py-0.5 rounded-full border capitalize ${styles[value] || fallback}`}>
       {value || "—"}
@@ -184,12 +188,12 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
     : [];
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-4">
+    <div className="bg-ra-surface border border-ra-border-soft rounded-xl p-4 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-1">
-        <h2 className="text-sm font-semibold text-slate-200">What-If Simulator</h2>
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">Hypothetical — does not change live state</span>
+        <h2 className="text-sm font-semibold text-ra-primary">What-If Simulator</h2>
+        <span className="text-[10px] uppercase tracking-wide text-ra-text-muted">Hypothetical — does not change live state</span>
       </div>
-      <p className="text-xs text-slate-500 -mt-2">
+      <p className="text-xs text-ra-text-muted -mt-2">
         What-If results are hypothetical and do not change the live map or station state.
       </p>
 
@@ -199,8 +203,8 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
           return (
             <div key={s.key} className={enabled ? "" : "opacity-50"}>
               <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-slate-300">{s.label}</span>
-                <span className="text-slate-400 font-mono">{inputs[s.key] > 0 ? "+" : ""}{inputs[s.key]}%</span>
+                <span className="text-ra-text-secondary">{s.label}</span>
+                <span className="text-ra-text-muted font-mono">{inputs[s.key] > 0 ? "+" : ""}{inputs[s.key]}%</span>
               </div>
               <input
                 type="range"
@@ -210,11 +214,11 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
                 value={inputs[s.key]}
                 disabled={!enabled}
                 onChange={(e) => handleSlider(s.key, Number(e.target.value))}
-                className="w-full accent-indigo-500 disabled:cursor-not-allowed"
+                className="w-full accent-ra-primary disabled:cursor-not-allowed"
                 aria-label={`${s.label} change percent`}
               />
               {!enabled && (
-                <p className="text-[10px] text-slate-500 mt-0.5">
+                <p className="text-[10px] text-ra-text-muted mt-0.5">
                   Not applicable — {station?.name || stationId} has no configured {s.key} capacity.
                 </p>
               )}
@@ -227,13 +231,13 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
         <button
           onClick={handleRun}
           disabled={loading}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 border border-indigo-500 text-white hover:bg-indigo-500 disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-lg bg-ra-primary hover:bg-ra-primary-strong text-ra-bg font-semibold transition shadow-[0_0_10px_var(--ra-primary-glow)] hover:shadow-[0_0_16px_var(--ra-primary-glow)] disabled:bg-ra-surface-hover disabled:text-ra-text-muted disabled:shadow-none disabled:cursor-not-allowed"
         >
           {loading ? "Running…" : "Run Simulation"}
         </button>
         <button
           onClick={handleReset}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500"
+          className="text-xs px-3 py-1.5 rounded-lg border border-ra-border text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-text transition"
         >
           Reset
         </button>
@@ -247,7 +251,7 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
       )}
 
       {!result && !error && (
-        <div className="text-xs text-slate-500 border border-slate-800 rounded-lg p-4 text-center">
+        <div className="text-xs text-ra-text-muted border border-ra-border-soft rounded-lg p-4 text-center">
           Adjust the sliders above and click Run Simulation to compare a hypothetical scenario against the current
           baseline.
         </div>
@@ -259,14 +263,14 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
             <Badge value={result.hypothetical.mode} styles={MODE_STYLES} />
             <Badge value={result.hypothetical.priority} styles={PRIORITY_STYLES} />
             {result.impact.decision_changed && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full border border-indigo-700 bg-indigo-950 text-indigo-300">
+              <span className="text-[10px] px-2 py-0.5 rounded-full border border-ra-primary-dark bg-ra-primary-soft text-ra-primary">
                 Decision changed
               </span>
             )}
           </div>
 
           <div>
-            <div className="grid grid-cols-4 gap-2 text-[10px] uppercase tracking-wide text-slate-500 pb-1 border-b border-slate-800">
+            <div className="grid grid-cols-4 gap-2 text-[10px] uppercase tracking-wide text-ra-text-muted pb-1 border-b border-ra-border-soft">
               <span>Metric</span>
               <span className="text-right">Baseline</span>
               <span className="text-right">Hypothetical</span>
@@ -305,24 +309,24 @@ export default function WhatIfPanel({ stationId, station, scenario, currentIndex
                  delta={result.impact.remaining_deficit_change_kw} deltaGood={false} />
           </div>
 
-          <div className="h-48 bg-slate-950/60 border border-slate-800 rounded-lg p-2">
+          <div className="h-48 bg-ra-bg-elevated border border-ra-border-soft rounded-lg p-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} label={{ value: "kW", angle: -90, position: "insideLeft", fill: "#64748b", fontSize: 11 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#3a3217" />
+                <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "#9f967c" }} />
+                <YAxis tick={{ fontSize: 11, fill: "#9f967c" }} label={{ value: "kW", angle: -90, position: "insideLeft", fill: "#9f967c", fontSize: 11 }} />
                 <RechartsTooltip
-                  contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", fontSize: 12 }}
+                  contentStyle={{ background: "#14120b", border: "1px solid #3a3217", fontSize: 12 }}
                   formatter={(v) => `${v.toFixed(1)} kW`}
                 />
                 <RechartsLegend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Baseline" fill="#64748b" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="Hypothetical" fill="#6366f1" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="Baseline" fill="#8a8272" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="Hypothetical" fill="#eab308" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 leading-relaxed">
+          <div className="bg-ra-bg-elevated border border-ra-border-soft rounded-lg p-3 text-xs text-ra-text-secondary leading-relaxed">
             {result.explanation}
           </div>
         </div>

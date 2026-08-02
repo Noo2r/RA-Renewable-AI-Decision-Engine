@@ -14,11 +14,11 @@ const STALE_MESSAGE = "System context changed. Ask RA again for an updated expla
 function FactChip({ fact }) {
   const value = typeof fact.value === "number" ? fact.value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : fact.value;
   return (
-    <div className="bg-slate-950/60 border border-slate-800 rounded-lg px-2.5 py-1.5 flex flex-col min-w-[110px]">
-      <span className="text-[10px] uppercase tracking-wide text-slate-500">{fact.label}</span>
-      <span className="text-sm text-slate-200 font-medium">
+    <div className="bg-ra-bg-elevated border border-ra-border rounded-lg px-2.5 py-1.5 flex flex-col min-w-[110px]">
+      <span className="text-[10px] uppercase tracking-wide text-ra-text-muted">{fact.label}</span>
+      <span className="text-sm text-ra-text font-medium">
         {value}
-        {fact.unit ? <span className="text-slate-500 text-xs"> {fact.unit}</span> : null}
+        {fact.unit ? <span className="text-ra-text-muted text-xs"> {fact.unit}</span> : null}
       </span>
     </div>
   );
@@ -101,12 +101,12 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+    <div className="bg-ra-surface border border-ra-border-soft rounded-xl p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-1">
-        <h2 className="text-sm font-semibold text-slate-200">RA Assistant</h2>
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">Offline · Grounded in current RA data</span>
+        <h2 className="text-sm font-semibold text-ra-primary">RA Assistant</h2>
+        <span className="text-[10px] uppercase tracking-wide text-ra-text-muted">Offline · Grounded in current RA data</span>
       </div>
-      <p className="text-xs text-slate-500 -mt-2">RA explains calculated system results. It does not control real equipment.</p>
+      <p className="text-xs text-ra-text-muted -mt-2">RA explains calculated system results. It does not control real equipment.</p>
 
       <div className="flex flex-wrap gap-1.5">
         {QUICK_QUESTIONS.map((q) => {
@@ -117,7 +117,7 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
               onClick={() => handleQuickQuestion(q.text)}
               disabled={disabled || loading}
               title={disabled ? "Run a What-If simulation first" : undefined}
-              className="text-xs px-2.5 py-1 rounded-full border border-slate-700 text-slate-300 hover:border-slate-500 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-xs px-2.5 py-1 rounded-full border border-ra-border-soft text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-primary transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-ra-border-soft disabled:hover:text-ra-text-secondary"
             >
               {q.text}
             </button>
@@ -133,18 +133,18 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
             if (e.key === "Enter") ask();
           }}
           placeholder="Ask RA about the current station…"
-          className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-950 text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+          className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-ra-border bg-ra-bg-elevated text-ra-text placeholder:text-ra-text-muted focus:outline-none focus:border-ra-focus"
         />
         <button
           onClick={() => ask()}
           disabled={loading || !question.trim()}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 border border-indigo-500 text-white hover:bg-indigo-500 disabled:opacity-50"
+          className="text-xs px-3 py-1.5 rounded-lg bg-ra-primary hover:bg-ra-primary-strong text-ra-bg font-semibold transition shadow-[0_0_10px_var(--ra-primary-glow)] hover:shadow-[0_0_16px_var(--ra-primary-glow)] disabled:bg-ra-surface-hover disabled:text-ra-text-muted disabled:shadow-none disabled:cursor-not-allowed"
         >
           {loading ? "Asking…" : "Ask"}
         </button>
         <button
           onClick={handleClear}
-          className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:border-slate-500"
+          className="text-xs px-3 py-1.5 rounded-lg border border-ra-border text-ra-text-secondary hover:border-ra-primary-dark hover:text-ra-text transition"
         >
           Clear
         </button>
@@ -161,14 +161,14 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
       )}
 
       {!answer && !error && !loading && !stale && (
-        <div className="text-xs text-slate-500 border border-slate-800 rounded-lg p-4 text-center">
+        <div className="text-xs text-ra-text-muted border border-ra-border-soft rounded-lg p-4 text-center">
           Ask a question above, or pick a quick question, to get a grounded explanation of the current station.
         </div>
       )}
 
       {answer && (
         <div className="flex flex-col gap-3">
-          <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3 text-sm text-slate-200 leading-relaxed">
+          <div className="bg-ra-bg-elevated border border-ra-border-soft rounded-lg p-3 text-sm text-ra-text leading-relaxed">
             {answer.answer}
           </div>
 
@@ -180,7 +180,7 @@ export default function AssistantPanel({ stationId, scenario, currentIndex, what
             </div>
           )}
 
-          <div className="text-[10px] text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+          <div className="text-[10px] text-ra-text-muted flex flex-wrap gap-x-3 gap-y-1">
             <span className="capitalize">Intent: {answer.intent.replace(/_/g, " ")}</span>
             <span>Station: {answer.station_id}</span>
             <span className="capitalize">Scenario: {answer.grounding.scenario}</span>

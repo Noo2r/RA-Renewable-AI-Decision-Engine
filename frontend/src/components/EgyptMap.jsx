@@ -72,7 +72,7 @@ function fmtPct(v) {
 // against every status color; the STATUS color communicates operational
 // status, this symbol communicates energy type only.
 function EnergySymbol({ energyType }) {
-  const stroke = "#0f172a";
+  const stroke = "#14120b";
   if (energyType === "solar") {
     return (
       <g stroke={stroke} strokeWidth="1" strokeLinecap="round">
@@ -115,7 +115,7 @@ function EnergySymbol({ energyType }) {
 
 function Legend() {
   return (
-    <div className="flex flex-col gap-1 text-xs text-slate-400">
+    <div className="flex flex-col gap-1 text-xs text-ra-text-secondary">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: STATUS_COLORS.normal }} />
@@ -130,7 +130,7 @@ function Legend() {
           Red — Critical
         </span>
       </div>
-      <p className="text-[10px] text-slate-500">
+      <p className="text-[10px] text-ra-text-muted">
         Status is based on the current RA recommendation priority, not equipment health or a failure diagnosis.
         Marker symbols show energy type only.
       </p>
@@ -141,17 +141,17 @@ function Legend() {
 function StationPreview({ station }) {
   if (!station) {
     return (
-      <div className="text-xs text-slate-500 border border-slate-800 rounded-lg p-3">
+      <div className="text-xs text-ra-text-muted border border-ra-border-soft rounded-lg p-3">
         Hover, focus, or select a marker to see station details.
       </div>
     );
   }
   const status = station.status || "unknown";
   return (
-    <div className="border border-slate-800 rounded-lg p-3 flex flex-col gap-2 text-xs">
+    <div className="border border-ra-border-soft rounded-lg p-3 flex flex-col gap-2 text-xs">
       <div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-base font-semibold text-slate-100 leading-tight">{station.name || station.station_id}</span>
+          <span className="text-base font-semibold text-ra-text leading-tight">{station.name || station.station_id}</span>
           <span
             className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide shrink-0"
             style={{ background: `${STATUS_COLORS[status] || STATUS_COLORS.unknown}22`, color: STATUS_COLORS[status] || STATUS_COLORS.unknown }}
@@ -159,10 +159,10 @@ function StationPreview({ station }) {
             {station.status_label || "Unknown"}
           </span>
         </div>
-        <div className="text-slate-500 capitalize">{station.energy_type || "unknown"} station</div>
+        <div className="text-ra-text-muted capitalize">{station.energy_type || "unknown"} station</div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-ra-text-secondary">
         <span>Generation: {fmtKw(station.generation_kw)}</span>
         <span>Demand: {fmtKw(station.demand_kw)}</span>
         <span>Net Balance: {fmtKw(station.net_balance_kw)}</span>
@@ -171,8 +171,8 @@ function StationPreview({ station }) {
         <span className="capitalize">Priority: {station.priority || "—"}</span>
       </div>
 
-      <div className="text-slate-400 border-t border-slate-800 pt-2">
-        Recommended: <span className="text-slate-200">{ACTION_LABELS[station.recommended_action] || station.recommended_action || "—"}</span>
+      <div className="text-ra-text-muted border-t border-ra-border-soft pt-2">
+        Recommended: <span className="text-ra-text">{ACTION_LABELS[station.recommended_action] || station.recommended_action || "—"}</span>
       </div>
     </div>
   );
@@ -213,10 +213,10 @@ export default function EgyptMap({ stations, selectedStationId, onSelectStation,
   const showGeometryError = !error && (geometryError || !projection) && safeStations.length >= 0;
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+    <div className="bg-ra-surface border border-ra-border-soft rounded-xl p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between flex-wrap gap-1">
-        <h2 className="text-sm font-semibold text-slate-200">Egypt Station Map</h2>
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">Demo Map — approximate station locations</span>
+        <h2 className="text-sm font-semibold text-ra-primary">Egypt Station Map</h2>
+        <span className="text-[10px] uppercase tracking-wide text-ra-text-muted">Demo Map — approximate station locations</span>
       </div>
 
       {showStaleMapWithWarning && (
@@ -242,13 +242,13 @@ export default function EgyptMap({ stations, selectedStationId, onSelectStation,
       )}
 
       {loading && !showFullError && safeStations.length === 0 && (
-        <div className="text-xs text-slate-500 border border-slate-800 rounded-lg p-6 text-center animate-pulse">
+        <div className="text-xs text-ra-text-muted border border-ra-border-soft rounded-lg p-6 text-center animate-pulse">
           Loading station map…
         </div>
       )}
 
       {!showFullError && safeStations.length === 0 && !loading && (
-        <div className="text-xs text-slate-500 border border-slate-800 rounded-lg p-6 text-center">
+        <div className="text-xs text-ra-text-muted border border-ra-border-soft rounded-lg p-6 text-center">
           No station data available.
         </div>
       )}
@@ -278,14 +278,16 @@ export default function EgyptMap({ stations, selectedStationId, onSelectStation,
 
               <path
                 d={egyptPathD}
-                fill="#1e293b"
-                stroke="#64748b"
+                fill="#241f16"
+                stroke="#7a6428"
                 strokeWidth="1.25"
                 strokeLinejoin="round"
                 fillRule="evenodd"
                 aria-hidden="true"
               />
 
+              {/* The Nile intentionally stays blue -- it represents water,
+                  not the brand accent. */}
               {nilePathD && (
                 <path
                   d={nilePathD}
@@ -343,8 +345,8 @@ export default function EgyptMap({ stations, selectedStationId, onSelectStation,
                         textAnchor={offset.anchor || "start"}
                         fontSize="8.5"
                         fontWeight="600"
-                        fill="#e2e8f0"
-                        stroke="#0f172a"
+                        fill="#fff8dc"
+                        stroke="#14120b"
                         strokeWidth="2.5"
                         paintOrder="stroke"
                         pointerEvents="none"
@@ -353,11 +355,11 @@ export default function EgyptMap({ stations, selectedStationId, onSelectStation,
                         {shortLabel}
                       </text>
                     )}
-                    {isSelected && <circle r="12.5" fill="none" stroke="#f8fafc" strokeWidth="2" opacity="0.9" />}
+                    {isSelected && <circle r="12.5" fill="none" stroke="#f6c744" strokeWidth="2" opacity="0.95" />}
                     {previewId === station.station_id && !isSelected && (
-                      <circle r="12.5" fill="none" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.9" />
+                      <circle r="12.5" fill="none" stroke="#facc15" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.9" />
                     )}
-                    <circle r="9" fill={STATUS_COLORS[status]} stroke="#0f172a" strokeWidth="1.5" />
+                    <circle r="9" fill={STATUS_COLORS[status]} stroke="#14120b" strokeWidth="1.5" />
                     <EnergySymbol energyType={station.energy_type} />
                   </g>
                 );

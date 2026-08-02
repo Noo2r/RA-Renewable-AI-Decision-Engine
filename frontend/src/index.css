@@ -2,6 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/* RA solar-gold theme palette. Centralized here (and mirrored into
+   tailwind.config.js's `ra` color namespace) so every component reuses
+   the same small set of values instead of scattering ad-hoc hex codes or
+   mismatched Tailwind color families. Visual tokens only -- nothing here
+   affects application behavior. */
+:root {
+  --ra-bg: #0d0c08;
+  --ra-bg-elevated: #14120b;
+  --ra-surface: #1b180e;
+  --ra-surface-hover: #242015;
+
+  --ra-border: #3a3217;
+  --ra-border-soft: #2b2616;
+
+  --ra-primary: #f6c744;
+  --ra-primary-strong: #eab308;
+  --ra-primary-dark: #a16207;
+  --ra-primary-soft: rgba(246, 199, 68, 0.12);
+  --ra-primary-glow: rgba(246, 199, 68, 0.2);
+
+  --ra-text: #fff8dc;
+  --ra-text-secondary: #d6cdae;
+  --ra-text-muted: #9f967c;
+
+  --ra-focus: #facc15;
+}
+
 body {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(circle at top, var(--ra-primary-glow), transparent 35%),
+    var(--ra-bg);
+  background-attachment: fixed;
+  color: var(--ra-text);
+}
+
+/* Visible keyboard focus everywhere, matching the theme's gold focus
+   color -- a safety net alongside each control's own focus classes. */
+:focus-visible {
+  outline: 2px solid var(--ra-focus);
+  outline-offset: 2px;
 }

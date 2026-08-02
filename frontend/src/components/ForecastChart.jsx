@@ -22,15 +22,15 @@ function ConfidencePill({ label, value }) {
   if (value == null) {
     return (
       <div className="flex flex-col items-center px-2">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
-        <span className="text-xs text-slate-600">n/a</span>
+        <span className="text-[10px] uppercase tracking-wide text-ra-text-muted">{label}</span>
+        <span className="text-xs text-ra-text-muted">n/a</span>
       </div>
     );
   }
   const color = value >= 90 ? "text-emerald-400" : value >= 70 ? "text-amber-400" : "text-rose-400";
   return (
     <div className="flex flex-col items-center px-2">
-      <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-[10px] uppercase tracking-wide text-ra-text-muted">{label}</span>
       <span className={`text-sm font-semibold ${color}`}>{value.toFixed(0)}%</span>
     </div>
   );
@@ -47,7 +47,7 @@ function CustomTooltip({ active, payload, label }) {
     if (actual == null && fc == null) return null;
     if (methodKey && row[methodKey] === "structural_zero") {
       return (
-        <div key={name} className="text-slate-500">
+        <div key={name} className="text-ra-text-muted">
           {name}: structurally unavailable (0 kW)
         </div>
       );
@@ -57,30 +57,30 @@ function CustomTooltip({ active, payload, label }) {
       const hi = row[upperKey];
       const conf = row[confKey];
       return (
-        <div key={name} className="text-slate-200">
+        <div key={name} className="text-ra-text">
           {name}: {fmt(fc)}
           {lo != null && hi != null && (
-            <span className="text-slate-500"> (est. range {fmt(lo)}–{fmt(hi)})</span>
+            <span className="text-ra-text-muted"> (est. range {fmt(lo)}–{fmt(hi)})</span>
           )}
-          {conf != null && <span className="text-slate-500"> · confidence {conf.toFixed(0)}%</span>}
+          {conf != null && <span className="text-ra-text-muted"> · confidence {conf.toFixed(0)}%</span>}
         </div>
       );
     }
     return (
-      <div key={name} className="text-slate-200">
+      <div key={name} className="text-ra-text">
         {name} (actual): {fmt(actual)}
       </div>
     );
   };
 
   return (
-    <div className="bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs space-y-1 max-w-xs">
-      <div className="text-slate-400 font-medium">{label}</div>
+    <div className="bg-ra-bg-elevated border border-ra-border rounded-lg p-3 text-xs space-y-1 max-w-xs">
+      <div className="text-ra-text-secondary font-medium">{label}</div>
       {line("Solar", "solarActual", "solarForecast", "solarLower", "solarUpper", "solarConfidence", "solarMethod")}
       {line("Wind", "windActual", "windForecast", "windLower", "windUpper", "windConfidence", "windMethod")}
       {line("Demand", "demandActual", "demandForecast", "demandLower", "demandUpper", "demandConfidence")}
       {isForecast && (
-        <div className="text-slate-500 pt-1 border-t border-slate-800">Estimated forecast range, not a guarantee.</div>
+        <div className="text-ra-text-muted pt-1 border-t border-ra-border-soft">Estimated forecast range, not a guarantee.</div>
       )}
     </div>
   );
@@ -136,11 +136,11 @@ export default function ForecastChart({ forecast }) {
   const nextHour = futurePoints[3] || futurePoints[futurePoints.length - 1]; // ~T+1h (4 steps @15min)
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+    <div className="bg-ra-surface border border-ra-border-soft rounded-xl p-4">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <h2 className="text-sm font-semibold text-slate-200">Component Forecast (next 6h)</h2>
+        <h2 className="text-sm font-semibold text-ra-primary">Component Forecast (next 6h)</h2>
         {model_quality && (
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ra-text-muted">
             Validation MAE — solar {model_quality.solar_mae_kw ?? "n/a"} · wind {model_quality.wind_mae_kw ?? "n/a"} ·
             {" "}demand {model_quality.demand_mae_kw} kW
           </span>
@@ -149,40 +149,40 @@ export default function ForecastChart({ forecast }) {
 
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-          <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
-          <YAxis stroke="#64748b" fontSize={12} label={{ value: "kW", angle: -90, position: "insideLeft", fill: "#64748b" }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#3a3217" />
+          <XAxis dataKey="time" stroke="#9f967c" fontSize={12} />
+          <YAxis stroke="#9f967c" fontSize={12} label={{ value: "kW", angle: -90, position: "insideLeft", fill: "#9f967c" }} />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
-          {nowLabel && <ReferenceLine x={nowLabel} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "now", fill: "#f59e0b", fontSize: 12 }} />}
+          {nowLabel && <ReferenceLine x={nowLabel} stroke="#d6cdae" strokeDasharray="4 4" label={{ value: "now", fill: "#d6cdae", fontSize: 12 }} />}
 
           {solarAvailable && (
             <>
-              <Line type="monotone" dataKey="solarActual" name="Solar (actual)" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls={false} />
-              <Line type="monotone" dataKey="solarForecast" name="Solar (forecast)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls={false} />
+              <Line type="monotone" dataKey="solarActual" name="Solar (actual)" stroke="#f6c744" strokeWidth={2} dot={false} connectNulls={false} />
+              <Line type="monotone" dataKey="solarForecast" name="Solar (forecast)" stroke="#f6c744" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls={false} />
             </>
           )}
           {windAvailable && (
             <>
-              <Line type="monotone" dataKey="windActual" name="Wind (actual)" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls={false} />
-              <Line type="monotone" dataKey="windForecast" name="Wind (forecast)" stroke="#38bdf8" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls={false} />
+              <Line type="monotone" dataKey="windActual" name="Wind (actual)" stroke="#2dd4bf" strokeWidth={2} dot={false} connectNulls={false} />
+              <Line type="monotone" dataKey="windForecast" name="Wind (forecast)" stroke="#2dd4bf" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls={false} />
             </>
           )}
-          <Line type="monotone" dataKey="demandActual" name="Demand (actual)" stroke="#a78bfa" strokeWidth={2} dot={false} connectNulls={false} />
-          <Line type="monotone" dataKey="demandForecast" name="Demand (forecast)" stroke="#a78bfa" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls={false} />
+          <Line type="monotone" dataKey="demandActual" name="Demand (actual)" stroke="#fb7185" strokeWidth={2} dot={false} connectNulls={false} />
+          <Line type="monotone" dataKey="demandForecast" name="Demand (forecast)" stroke="#fb7185" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls={false} />
         </LineChart>
       </ResponsiveContainer>
 
       {!solarAvailable && (
-        <div className="text-xs text-slate-500 mt-1">Solar: structurally unavailable at this station (0 kW capacity).</div>
+        <div className="text-xs text-ra-text-muted mt-1">Solar: structurally unavailable at this station (0 kW capacity).</div>
       )}
       {!windAvailable && (
-        <div className="text-xs text-slate-500 mt-1">Wind: structurally unavailable at this station (0 kW capacity).</div>
+        <div className="text-xs text-ra-text-muted mt-1">Wind: structurally unavailable at this station (0 kW capacity).</div>
       )}
 
       {nextHour && (
-        <div className="mt-3 pt-3 border-t border-slate-800">
-          <div className="text-xs text-slate-500 mb-1">Next-Hour Forecast Confidence (model-confidence score, not a probability)</div>
+        <div className="mt-3 pt-3 border-t border-ra-border-soft">
+          <div className="text-xs text-ra-text-muted mb-1">Next-Hour Forecast Confidence (model-confidence score, not a probability)</div>
           <div className="flex flex-wrap">
             <ConfidencePill label="Solar" value={nextHour.solar_method === "structural_zero" ? null : nextHour.solar_confidence_pct} />
             <ConfidencePill label="Wind" value={nextHour.wind_method === "structural_zero" ? null : nextHour.wind_confidence_pct} />
