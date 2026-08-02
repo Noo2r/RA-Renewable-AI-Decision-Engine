@@ -50,7 +50,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error
 
 from ra_core.config import FORECAST_HORIZON_STEPS, INTERVAL_MINUTES
-from ra_core.stations import DEFAULT_STATION_ID, get_station
+from ra_core.stations import DEFAULT_STATION_ID, resolve_station
 
 # --- Confidence / interval constants (all referenced from the report) ------
 CONFIDENCE_MIN_PCT = 50.0
@@ -198,18 +198,22 @@ def _forecast_one_target(df_hist: pd.DataFrame, df_future: pd.DataFrame, target_
     return dict(points=points, mae=mae_out, holdout_actual=holdout_actual, holdout_pred=holdout_pred)
 
 
-def forecast_components(all_rows: list[dict], current_index: int, station_id: str = DEFAULT_STATION_ID,
+def forecast_components(all_rows: list[dict], current_index: int, station_id: "str | object" = DEFAULT_STATION_ID,
                          history_window: int = 16) -> dict:
     """Core Part 2 forecasting function, shared by the backend and the
     notebook. all_rows: full readings list for one station+scenario,
     ordered by idx. current_index: the simulated 'now' pointer.
+
+    station_id may be a registered station's id or an already-built
+    StationConfig (e.g. a hypothetical copy from
+    ra_core.what_if.simulate_what_if()) -- see resolve_station().
 
     Returns forward-only component forecasts (solar/wind/demand + derived
     generation/net-balance, each with an interval and a confidence score)
     plus model_quality metrics. Does not include recent history -- see
     forecast_surplus() for the history-enriched, backward-compatible view.
     """
-    station = get_station(station_id)
+    station = resolve_station(station_id)
     df_all = pd.DataFrame(all_rows)
     df_hist = df_all.iloc[: current_index + 1]
 
@@ -299,7 +303,7 @@ def forecast_components(all_rows: list[dict], current_index: int, station_id: st
     }
 
 
-def forecast_surplus(all_rows: list[dict], current_index: int, station_id: str = DEFAULT_STATION_ID,
+def forecast_surplus(all_rows: list[dict], current_index: int, station_id: "str | object" = DEFAULT_STATION_ID,
                       history_window: int = 16) -> dict:
     """Backward-compatible entry point (Part 0/1 contract). Internally
     calls forecast_components() and derives the original

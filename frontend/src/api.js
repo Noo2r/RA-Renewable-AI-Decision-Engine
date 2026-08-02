@@ -6,7 +6,13 @@ async function request(path, options) {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`${path} failed: ${res.status}`);
+    let detail = null;
+    try {
+      detail = (await res.json())?.detail;
+    } catch {
+      // response wasn't JSON -- fall back to the generic message below
+    }
+    throw new Error(detail || `${path} failed: ${res.status}`);
   }
   return res.json();
 }
@@ -31,4 +37,5 @@ export const api = {
   setScenario: (scenario) =>
     request("/scenario", { method: "POST", body: JSON.stringify({ scenario }) }),
   tick: (steps = 1) => request("/tick", { method: "POST", body: JSON.stringify({ steps }) }),
+  simulateWhatIf: (body) => request("/simulate", { method: "POST", body: JSON.stringify(body) }),
 };

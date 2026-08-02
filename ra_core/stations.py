@@ -192,3 +192,15 @@ def get_station(station_id: str) -> StationConfig:
 
 def list_stations() -> list[StationConfig]:
     return list(_STATIONS.values())
+
+
+def resolve_station(station_or_id: "str | StationConfig") -> StationConfig:
+    """Accepts either a registered station_id (looked up here, as before)
+    or an already-built StationConfig -- e.g. a temporary
+    dataclasses.replace() copy used for What-If simulation (Part 5) -- and
+    returns it unchanged. Lets callers pass a hypothetical station through
+    the shared data-generation/forecasting pipeline without registering it
+    in (or mutating) the module-level registry."""
+    if isinstance(station_or_id, StationConfig):
+        return station_or_id
+    return get_station(station_or_id)

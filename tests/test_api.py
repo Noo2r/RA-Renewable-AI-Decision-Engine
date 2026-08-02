@@ -548,3 +548,126 @@ def test_history_isolation_unaffected_by_part4(client):
     wind_history = client.get("/history?station_id=wind-01").json()
     assert all(d["station_id"] == "solar-01" for d in solar_history["decisions"])
     assert all(d["station_id"] == "wind-01" for d in wind_history["decisions"])
+
+
+# ---------------------------------------------------------------------------
+# Part 5: POST /simulate (What-If simulator)
+# ---------------------------------------------------------------------------
+
+def test_simulate_returns_baseline_hypothetical_impact_and_explanation(client):
+    resp = client.post("/simulate", json={
+        "station_id": "hybrid-01", "solar_capacity_change_pct": 20, "battery_capacity_change_pct": 50,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in ("station_id", "scenario", "current_index", "timestamp", "inputs",
+                "baseline", "hypothetical", "impact", "explanation"):
+        assert key in body
+    assert body["station_id"] == "hybrid-01"
+    assert isinstance(body["explanation"], str) and len(body["explanation"]) > 0
+
+
+def test_simulate_defaults_to_current_global_scenario_and_index(client):
+    client.post("/scenario", json={"scenario": "high_demand"})
+    client.post("/tick", json={"steps": 8})
+    state = client.get("/state").json()
+
+    resp = client.post("/simulate", json={"station_id": "hybrid-01"})
+    body = resp.json()
+    assert body["scenario"] == "high_demand"
+    assert body["current_index"] == state["current_index"]
+
+
+def test_simulate_invalid_station_returns_404(client):
+    resp = client.post("/simulate", json={"station_id": "not-a-station"})
+    assert resp.status_code == 404
+
+
+def test_simulate_out_of_range_percent_returns_422(client):
+    resp = client.post("/simulate", json={"station_id": "hybrid-01", "solar_capacity_change_pct": 500})
+    assert resp.status_code == 422
+    assert "solar_capacity_change_pct" in resp.json()["detail"]
+
+
+def test_simulate_nonzero_wind_on_solar_only_station_returns_422(client):
+    resp = client.post("/simulate", json={"station_id": "solar-01", "wind_capacity_change_pct": 10})
+    assert resp.status_code == 422
+    assert "wind" in resp.json()["detail"].lower()
+
+
+def test_simulate_nonzero_solar_on_wind_only_station_returns_422(client):
+    resp = client.post("/simulate", json={"station_id": "wind-01", "solar_capacity_change_pct": 10})
+    assert resp.status_code == 422
+    assert "solar" in resp.json()["detail"].lower()
+
+
+def test_simulate_zero_baseline_percent_returns_null_not_error(client):
+    # solar-01 has no wind, so its forecast_generation baseline is entirely
+    # solar; at night (or with 0 baseline demand components) percentage
+    # deltas would be undefined -- this must never surface as a 500 or a
+    # NaN/inf, only a clean 200 with null where appropriate.
+    resp = client.post("/simulate", json={"station_id": "wind-01", "wind_capacity_change_pct": 20})
+    assert resp.status_code == 200
+    body = resp.json()
+    import json as _json
+    assert "Infinity" not in resp.text and "NaN" not in resp.text
+    _json.loads(resp.text)  # would raise if genuinely non-finite floats leaked through
+
+
+def test_simulate_is_deterministic(client):
+    body_a = client.post("/simulate", json={"station_id": "hybrid-01", "demand_change_pct": 20}).json()
+    body_b = client.post("/simulate", json={"station_id": "hybrid-01", "demand_change_pct": 20}).json()
+    assert body_a == body_b
+
+
+def test_simulate_has_no_side_effects_on_state_history_or_overview(client):
+    before_state = client.get("/state?station_id=hybrid-01").json()
+    before_history = client.get("/history?station_id=hybrid-01").json()
+    before_overview = client.get("/stations/overview").json()
+    before_national = client.get("/national/summary").json()
+
+    for _ in range(3):
+        client.post("/simulate", json={
+            "station_id": "hybrid-01", "solar_capacity_change_pct": 80,
+            "demand_change_pct": 30, "battery_capacity_change_pct": 90,
+        })
+
+    after_state = client.get("/state?station_id=hybrid-01").json()
+    after_history = client.get("/history?station_id=hybrid-01").json()
+    after_overview = client.get("/stations/overview").json()
+    after_national = client.get("/national/summary").json()
+
+    assert before_state == after_state
+    assert len(before_history["decisions"]) == len(after_history["decisions"])
+    assert before_overview == after_overview
+    assert before_national == after_national
+
+
+def test_simulate_does_not_change_stations_endpoint(client):
+    before = client.get("/stations").json()
+    client.post("/simulate", json={"station_id": "hybrid-01", "battery_capacity_change_pct": 90})
+    after = client.get("/stations").json()
+    assert before == after
+
+
+# ---------------------------------------------------------------------------
+# Part 5: regression (existing behavior must be unaffected)
+# ---------------------------------------------------------------------------
+
+def test_forecast_and_decision_unchanged_by_part5(client):
+    fc = client.get("/forecast?hours=6").json()
+    assert fc["model_quality"]["validation_method"] == "chronological_holdout"
+    decision = client.get("/decision").json()
+    assert "mode" in decision and "priority" in decision
+
+
+def test_map_overview_endpoint_unaffected_by_part5(client):
+    body = client.get("/stations/overview").json()
+    assert len(body["stations"]) == 3
+    for s in body["stations"]:
+        assert "status" in s and "status_label" in s
+
+
+def test_national_summary_still_aggregation_only_after_part5(client):
+    body = client.get("/national/summary").json()
+    assert set(body.keys()) == {"scenario", "current_index", "timestamp", "station_count", "totals", "battery", "stations"}

@@ -8,6 +8,7 @@ from app.seed import seed_all
 from ra_core.decision_engine import evaluate, status_from_priority, STATUS_LABELS
 from ra_core.forecasting import forecast_surplus
 from ra_core.stations import DEFAULT_STATION_ID, StationConfig, UnknownStationError, get_station, list_stations
+from ra_core.what_if import WhatIfValidationError, simulate_what_if
 
 app = FastAPI(title="RA - Renewable AI Decision Engine", version="0.1.0")
 
@@ -335,3 +336,35 @@ def national_summary():
             for s, r in per_station
         ],
     }
+
+
+class WhatIfRequest(BaseModel):
+    station_id: str = DEFAULT_STATION_ID
+    solar_capacity_change_pct: float = 0.0
+    wind_capacity_change_pct: float = 0.0
+    demand_change_pct: float = 0.0
+    battery_capacity_change_pct: float = 0.0
+
+
+@app.post("/simulate")
+def simulate(req: WhatIfRequest):
+    """Part 5 What-If simulator. Automatically uses the current global
+    scenario and simulated index (read-only) -- the request never specifies
+    them. Delegates entirely to ra_core.what_if.simulate_what_if(), which
+    is side-effect free: no database write, no registry mutation, no
+    change to the active scenario or simulated clock. See that module's
+    docstring for the full comparability/determinism guarantee."""
+    with db.get_conn() as conn:
+        scenario, idx = db.get_sim_state(conn)
+    try:
+        return simulate_what_if(
+            req.station_id, scenario, idx,
+            solar_capacity_change_pct=req.solar_capacity_change_pct,
+            wind_capacity_change_pct=req.wind_capacity_change_pct,
+            demand_change_pct=req.demand_change_pct,
+            battery_capacity_change_pct=req.battery_capacity_change_pct,
+        )
+    except UnknownStationError as e:
+        raise HTTPException(404, str(e)) from e
+    except WhatIfValidationError as e:
+        raise HTTPException(422, str(e)) from e

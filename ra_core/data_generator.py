@@ -24,7 +24,7 @@ from ra_core.config import (
     INTERVAL_MINUTES,
     TOTAL_POINTS,
 )
-from ra_core.stations import DEFAULT_STATION_ID, StationConfig, get_station
+from ra_core.stations import DEFAULT_STATION_ID, StationConfig, resolve_station
 
 SCENARIO_PARAMS = {
     "sunny": dict(cloud_base=0.12, cloud_amp=0.08, wind_base=4.5, wind_amp=2.5,
@@ -47,12 +47,16 @@ def _seed_for(scenario: str, seed_offset: int) -> int:
 
 def generate_series(
     scenario: str,
-    station_id: str = DEFAULT_STATION_ID,
+    station_id: "str | StationConfig" = DEFAULT_STATION_ID,
     start_time: datetime | None = None,
 ) -> pd.DataFrame:
+    """station_id may be a registered station's id (looked up as before) or
+    an already-built StationConfig -- e.g. a temporary hypothetical copy
+    used by ra_core.what_if.simulate_what_if() -- so hypothetical series
+    can be generated without registering a station."""
     if scenario not in SCENARIO_PARAMS:
         raise ValueError(f"Unknown scenario: {scenario}")
-    station: StationConfig = get_station(station_id)
+    station: StationConfig = resolve_station(station_id)
     params = SCENARIO_PARAMS[scenario]
     rng = np.random.default_rng(_seed_for(scenario, station.seed_offset))
 

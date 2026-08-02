@@ -5,6 +5,7 @@ import ForecastChart from "./components/ForecastChart.jsx";
 import DecisionCard from "./components/DecisionCard.jsx";
 import HistoryTimeline from "./components/HistoryTimeline.jsx";
 import EgyptMap from "./components/EgyptMap.jsx";
+import WhatIfPanel from "./components/WhatIfPanel.jsx";
 
 const SCENARIO_LABELS = {
   sunny: "Sunny Day",
@@ -223,6 +224,13 @@ export default function App() {
         </div>
         <DecisionCard decision={decision} onExecute={handleExecute} executing={executing} lastLogged={lastLogged} />
       </div>
+
+      <WhatIfPanel
+        stationId={stationId}
+        station={selectedStation}
+        scenario={state?.scenario}
+        currentIndex={state?.current_index}
+      />
     </div>
   );
 }
