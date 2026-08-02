@@ -33,6 +33,9 @@ notebook/*_executed.ipynb
 *.env
 !.env.example
 
+# Local dev-tool metadata (not part of the application)
+.claude/
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db
