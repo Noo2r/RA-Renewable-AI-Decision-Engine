@@ -38,4 +38,5 @@ export const api = {
     request("/scenario", { method: "POST", body: JSON.stringify({ scenario }) }),
   tick: (steps = 1) => request("/tick", { method: "POST", body: JSON.stringify({ steps }) }),
   simulateWhatIf: (body) => request("/simulate", { method: "POST", body: JSON.stringify(body) }),
+  assistantQuery: (body) => request("/assistant/query", { method: "POST", body: JSON.stringify(body) }),
 };

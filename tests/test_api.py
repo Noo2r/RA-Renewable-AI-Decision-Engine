@@ -671,3 +671,163 @@ def test_map_overview_endpoint_unaffected_by_part5(client):
 def test_national_summary_still_aggregation_only_after_part5(client):
     body = client.get("/national/summary").json()
     assert set(body.keys()) == {"scenario", "current_index", "timestamp", "station_count", "totals", "battery", "stations"}
+
+
+# ---------------------------------------------------------------------------
+# Part 6: POST /assistant/query (grounded RA Assistant)
+# ---------------------------------------------------------------------------
+
+def test_assistant_valid_question_returns_intent_answer_facts_and_grounding(client):
+    resp = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "What is happening now?"})
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in ("intent", "station_id", "answer", "facts", "generated_from", "grounding"):
+        assert key in body
+    assert body["intent"] == "explain_current_status"
+    assert body["station_id"] == "hybrid-01"
+    assert isinstance(body["answer"], str) and body["answer"]
+    assert isinstance(body["facts"], list)
+    for key in ("scenario", "current_index", "timestamp", "station_id", "what_if_included", "mode"):
+        assert key in body["grounding"]
+    assert body["grounding"]["mode"] == "offline_deterministic"
+
+
+def test_assistant_default_station_is_hybrid_01(client):
+    resp = client.post("/assistant/query", json={"question": "What is happening now?"})
+    assert resp.status_code == 200
+    assert resp.json()["station_id"] == "hybrid-01"
+
+
+def test_assistant_invalid_station_returns_404(client):
+    resp = client.post("/assistant/query", json={"station_id": "not-a-station", "question": "What is happening now?"})
+    assert resp.status_code == 404
+
+
+def test_assistant_empty_question_returns_422(client):
+    resp = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "   "})
+    assert resp.status_code == 422
+
+
+def test_assistant_long_question_returns_422(client):
+    resp = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "a" * 600})
+    assert resp.status_code == 422
+
+
+def test_assistant_invalid_what_if_inputs_return_422(client):
+    resp = client.post("/assistant/query", json={
+        "station_id": "solar-01",
+        "question": "What changed in the simulation?",
+        "what_if_inputs": {"wind_capacity_change_pct": 10},
+    })
+    assert resp.status_code == 422
+
+
+def test_assistant_out_of_scope_request_returns_safe_scoped_guidance(client):
+    resp = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "What is the weather in Cairo?"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["intent"] == "out_of_scope"
+    assert "RA station status" in body["answer"]
+
+
+def test_assistant_equipment_control_request_is_refused_safely(client):
+    resp = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "Discharge the battery now."})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["intent"] == "out_of_scope"
+    assert "does not send control commands to real equipment" in body["answer"]
+
+
+def test_assistant_api_is_deterministic(client):
+    body_a = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "Why was this decision selected?"}).json()
+    body_b = client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "Why was this decision selected?"}).json()
+    assert body_a == body_b
+
+
+def test_assistant_creates_no_history_row(client):
+    before = client.get("/history?station_id=hybrid-01").json()
+    client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "What is happening now?"})
+    client.post("/assistant/query", json={"station_id": "hybrid-01", "question": "Why was this decision selected?"})
+    after = client.get("/history?station_id=hybrid-01").json()
+    assert len(before["decisions"]) == len(after["decisions"])
+
+
+def test_assistant_does_not_change_state_scenario_index_overview_or_national_summary(client):
+    before_state = client.get("/state?station_id=hybrid-01").json()
+    before_overview = client.get("/stations/overview").json()
+    before_national = client.get("/national/summary").json()
+
+    for question in ["What is happening now?", "Which station needs attention?", "Why was this decision selected?"]:
+        client.post("/assistant/query", json={"station_id": "hybrid-01", "question": question})
+
+    after_state = client.get("/state?station_id=hybrid-01").json()
+    after_overview = client.get("/stations/overview").json()
+    after_national = client.get("/national/summary").json()
+
+    assert before_state == after_state
+    assert before_overview == after_overview
+    assert before_national == after_national
+
+
+def test_assistant_what_if_intent_regenerates_server_side(client):
+    resp = client.post("/assistant/query", json={
+        "station_id": "hybrid-01",
+        "question": "What changed in the simulation?",
+        "what_if_inputs": {"solar_capacity_change_pct": 20, "battery_capacity_change_pct": 50},
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["intent"] == "explain_what_if"
+    assert body["grounding"]["what_if_included"] is True
+
+    sim = client.post("/simulate", json={
+        "station_id": "hybrid-01", "solar_capacity_change_pct": 20, "battery_capacity_change_pct": 50,
+    }).json()
+    assert sim["explanation"] == body["answer"]
+
+
+def test_assistant_what_if_intent_without_inputs_asks_to_run_simulation(client):
+    resp = client.post("/assistant/query", json={
+        "station_id": "hybrid-01", "question": "What changed in the simulation?",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["grounding"]["what_if_included"] is False
+    assert "Run a What-If simulation first" in body["answer"]
+
+
+# ---------------------------------------------------------------------------
+# Part 6: regression (existing behavior must be unaffected)
+# ---------------------------------------------------------------------------
+
+def test_forecast_unchanged_by_part6(client):
+    body = client.get("/forecast?hours=6").json()
+    assert body["model_quality"]["validation_method"] == "chronological_holdout"
+
+
+def test_decision_unchanged_by_part6(client):
+    body = client.get("/decision").json()
+    assert "mode" in body and "priority" in body and "recommended" in body
+
+
+def test_simulate_endpoint_unchanged_by_part6(client):
+    resp = client.post("/simulate", json={"station_id": "hybrid-01", "solar_capacity_change_pct": 10})
+    assert resp.status_code == 200
+    body = resp.json()
+    for key in ("baseline", "hypothetical", "impact", "explanation"):
+        assert key in body
+
+
+def test_map_overview_unchanged_by_part6(client):
+    body = client.get("/stations/overview").json()
+    assert len(body["stations"]) == 3
+
+
+def test_history_remains_station_isolated_after_part6(client):
+    client.post("/decision/log?station_id=solar-01")
+    client.post("/assistant/query", json={"station_id": "wind-01", "question": "What is happening now?"})
+    client.post("/decision/log?station_id=wind-01")
+    solar_history = client.get("/history?station_id=solar-01").json()
+    wind_history = client.get("/history?station_id=wind-01").json()
+    assert all(d["station_id"] == "solar-01" for d in solar_history["decisions"])
+    assert all(d["station_id"] == "wind-01" for d in wind_history["decisions"])

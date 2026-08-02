@@ -1,10 +1,12 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app import db
 from app.config import DEFAULT_START_INDEX, SCENARIOS
+from app.llm_adapter import maybe_rewrite_with_llm
 from app.seed import seed_all
+from ra_core.assistant import AssistantContext, answer_question, classify_intent
 from ra_core.decision_engine import evaluate, status_from_priority, STATUS_LABELS
 from ra_core.forecasting import forecast_surplus
 from ra_core.stations import DEFAULT_STATION_ID, StationConfig, UnknownStationError, get_station, list_stations
@@ -108,56 +110,61 @@ def get_stations():
     }
 
 
-@app.get("/stations/overview")
-def stations_overview():
-    """One current operational snapshot per registered station, for the
-    Egypt map dashboard (Part 4). Reuses the exact same shared-clock +
-    forecast_surplus() + evaluate() call path already used by /state and
-    /decision (via _evaluate_for_station) -- this endpoint performs no
-    independent calculation of its own. `status`/`status_label` are a
-    deterministic relabeling of the decision engine's own `priority`
-    (see ra_core.decision_engine.status_from_priority): this is an
-    operational "how urgently does this station's current recommendation
-    need attention" indicator, NOT equipment health, failure probability,
-    anomaly status, or maintenance status.
+def _build_stations_overview(conn, scenario: str, idx: int) -> list[dict]:
+    """Shared by GET /stations/overview and the assistant's compare_stations
+    intent -- one current operational snapshot per registered station.
+    Reuses the exact same shared-clock + forecast_surplus() + evaluate()
+    call path already used by /state and /decision (via
+    _evaluate_for_station) -- performs no independent calculation of its
+    own. `status`/`status_label` are a deterministic relabeling of the
+    decision engine's own `priority` (see
+    ra_core.decision_engine.status_from_priority): an operational "how
+    urgently does this station's current recommendation need attention"
+    indicator, NOT equipment health, failure probability, anomaly status,
+    or maintenance status.
 
     All stations share one global scenario and simulated clock (Part 1),
     so every entry here is evaluated at the same scenario/index and
     therefore carries the same timestamp.
     """
-    stations = list_stations()
     overview = []
+    for station in list_stations():
+        reading = db.get_reading_at(conn, station.id, scenario, idx)
+        if reading is None:
+            raise HTTPException(404, f"No data for station '{station.id}' at current scenario/index")
+        all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
+        future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
+        fc = forecast_surplus(all_rows, idx, station_id=station.id)
+        future_prices = [r["price_egp"] for r in future_rows]
+        result = _evaluate_for_station(station, reading, fc["forecast"], future_prices)
+        status = status_from_priority(result["priority"])
+        overview.append({
+            "station_id": station.id,
+            "name": station.name,
+            "energy_type": station.energy_type,
+            "latitude": station.latitude,
+            "longitude": station.longitude,
+            "scenario": scenario,
+            "current_index": idx,
+            "timestamp": reading["timestamp"],
+            "generation_kw": round(reading["solar_kw"] + reading["wind_kw"], 2),
+            "demand_kw": round(reading["demand_kw"], 2),
+            "net_balance_kw": result["net_balance_kw"],
+            "battery_soc_pct": round(reading["battery_soc"], 1),
+            "mode": result["mode"],
+            "priority": result["priority"],
+            "recommended_action": result["recommended"]["action"],
+            "status": status,
+            "status_label": STATUS_LABELS.get(status, "Unknown"),
+        })
+    return overview
+
+
+@app.get("/stations/overview")
+def stations_overview():
     with db.get_conn() as conn:
         scenario, idx = db.get_sim_state(conn)
-        for station in stations:
-            reading = db.get_reading_at(conn, station.id, scenario, idx)
-            if reading is None:
-                raise HTTPException(404, f"No data for station '{station.id}' at current scenario/index")
-            all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
-            future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
-            fc = forecast_surplus(all_rows, idx, station_id=station.id)
-            future_prices = [r["price_egp"] for r in future_rows]
-            result = _evaluate_for_station(station, reading, fc["forecast"], future_prices)
-            status = status_from_priority(result["priority"])
-            overview.append({
-                "station_id": station.id,
-                "name": station.name,
-                "energy_type": station.energy_type,
-                "latitude": station.latitude,
-                "longitude": station.longitude,
-                "scenario": scenario,
-                "current_index": idx,
-                "timestamp": reading["timestamp"],
-                "generation_kw": round(reading["solar_kw"] + reading["wind_kw"], 2),
-                "demand_kw": round(reading["demand_kw"], 2),
-                "net_balance_kw": result["net_balance_kw"],
-                "battery_soc_pct": round(reading["battery_soc"], 1),
-                "mode": result["mode"],
-                "priority": result["priority"],
-                "recommended_action": result["recommended"]["action"],
-                "status": status,
-                "status_label": STATUS_LABELS.get(status, "Unknown"),
-            })
+        overview = _build_stations_overview(conn, scenario, idx)
     return {
         "scenario": scenario,
         "current_index": idx,
@@ -368,3 +375,112 @@ def simulate(req: WhatIfRequest):
         raise HTTPException(404, str(e)) from e
     except WhatIfValidationError as e:
         raise HTTPException(422, str(e)) from e
+
+
+MAX_ASSISTANT_QUESTION_LENGTH = 500
+
+# Intents that need a decision (evaluate()) and therefore also its
+# forecast_surplus() dependency -- explain_current_status wants
+# mode/priority/recommended action, explain_decision wants the full
+# recommendation/ranked-alternatives/explanation.
+_INTENTS_NEEDING_DECISION = ("explain_current_status", "explain_decision")
+
+
+class AssistantWhatIfInputs(BaseModel):
+    solar_capacity_change_pct: float = 0.0
+    wind_capacity_change_pct: float = 0.0
+    demand_change_pct: float = 0.0
+    battery_capacity_change_pct: float = 0.0
+
+
+class AssistantRequest(BaseModel):
+    station_id: str = DEFAULT_STATION_ID
+    question: str
+    what_if_inputs: AssistantWhatIfInputs | None = None
+
+    @field_validator("question")
+    @classmethod
+    def _validate_question(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("question must not be empty")
+        if len(stripped) > MAX_ASSISTANT_QUESTION_LENGTH:
+            raise ValueError(f"question is too long (max {MAX_ASSISTANT_QUESTION_LENGTH} characters)")
+        return value
+
+
+@app.post("/assistant/query")
+def assistant_query(req: AssistantRequest):
+    """Part 6 grounded RA Assistant. Gathers only the context the
+    classified intent actually needs, from the same shared functions
+    /state, /forecast, /decision, /stations/overview, and /simulate
+    already call directly (never via HTTP), then delegates to
+    ra_core.assistant.answer_question() for a fully deterministic,
+    offline, grounded answer. An optional (disabled-by-default) LLM
+    wording pass may then rephrase the answer text only -- see
+    app.llm_adapter.
+
+    No database write, no scenario/clock/registry mutation, no decision
+    execution, and no history entry are ever produced by this endpoint.
+    """
+    station = _resolve_station(req.station_id)
+    intent = classify_intent(req.question)
+
+    with db.get_conn() as conn:
+        scenario, idx, reading, total = _current_state(conn, station.id)
+        if reading is None:
+            raise HTTPException(404, "No data for current scenario")
+
+        current_state = {
+            "generation_kw": round(reading["solar_kw"] + reading["wind_kw"], 2),
+            "demand_kw": round(reading["demand_kw"], 2),
+            "net_balance_kw": round(reading["solar_kw"] + reading["wind_kw"] - reading["demand_kw"], 2),
+            "battery_soc_pct": round(reading["battery_soc"], 1),
+        }
+
+        forecast_ctx = None
+        decision_ctx = None
+        if intent in ("explain_forecast",) + _INTENTS_NEEDING_DECISION:
+            all_rows = db.get_readings(conn, station.id, scenario, start_idx=0)
+            fc = forecast_surplus(all_rows, idx, station_id=station.id)
+            if intent == "explain_forecast":
+                forecast_ctx = fc
+            if intent in _INTENTS_NEEDING_DECISION:
+                future_rows = db.get_readings(conn, station.id, scenario, start_idx=idx + 1, end_idx=idx + 12)
+                future_prices = [r["price_egp"] for r in future_rows]
+                decision_ctx = _evaluate_for_station(station, reading, fc["forecast"], future_prices)
+
+        stations_overview_ctx = None
+        if intent == "compare_stations":
+            stations_overview_ctx = _build_stations_overview(conn, scenario, idx)
+
+    # simulate_what_if() is itself fully self-contained (no db access), so
+    # it runs outside the connection block like /simulate already does.
+    what_if_ctx = None
+    if intent == "explain_what_if" and req.what_if_inputs is not None:
+        try:
+            what_if_ctx = simulate_what_if(
+                station.id, scenario, idx,
+                solar_capacity_change_pct=req.what_if_inputs.solar_capacity_change_pct,
+                wind_capacity_change_pct=req.what_if_inputs.wind_capacity_change_pct,
+                demand_change_pct=req.what_if_inputs.demand_change_pct,
+                battery_capacity_change_pct=req.what_if_inputs.battery_capacity_change_pct,
+            )
+        except WhatIfValidationError as e:
+            raise HTTPException(422, str(e)) from e
+
+    context = AssistantContext(
+        station_id=station.id,
+        station_name=station.name,
+        energy_type=station.energy_type,
+        scenario=scenario,
+        current_index=idx,
+        timestamp=reading["timestamp"],
+        current_state=current_state,
+        forecast=forecast_ctx,
+        decision=decision_ctx,
+        stations_overview=stations_overview_ctx,
+        what_if=what_if_ctx,
+    )
+    result = answer_question(req.question, context)
+    return maybe_rewrite_with_llm(result)

@@ -6,6 +6,7 @@ import DecisionCard from "./components/DecisionCard.jsx";
 import HistoryTimeline from "./components/HistoryTimeline.jsx";
 import EgyptMap from "./components/EgyptMap.jsx";
 import WhatIfPanel from "./components/WhatIfPanel.jsx";
+import AssistantPanel from "./components/AssistantPanel.jsx";
 
 const SCENARIO_LABELS = {
   sunny: "Sunny Day",
@@ -30,6 +31,11 @@ export default function App() {
   const [overview, setOverview] = useState([]);
   const [overviewError, setOverviewError] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
+  // Owned by WhatIfPanel via onWhatIfChange -- the current non-stale
+  // What-If input percentages (or null), shared with AssistantPanel so it
+  // can ground explain_what_if answers without a second copy of the
+  // simulation state.
+  const [whatIfInputs, setWhatIfInputs] = useState(null);
 
   const selectedStation = stations.find((s) => s.id === stationId);
 
@@ -230,6 +236,14 @@ export default function App() {
         station={selectedStation}
         scenario={state?.scenario}
         currentIndex={state?.current_index}
+        onWhatIfChange={setWhatIfInputs}
+      />
+
+      <AssistantPanel
+        stationId={stationId}
+        scenario={state?.scenario}
+        currentIndex={state?.current_index}
+        whatIfInputs={whatIfInputs}
       />
     </div>
   );

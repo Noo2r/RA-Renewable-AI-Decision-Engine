@@ -83,12 +83,33 @@ function Badge({ value, styles, fallback = "border-slate-700 text-slate-300" }) 
   );
 }
 
-export default function WhatIfPanel({ stationId, station, scenario, currentIndex }) {
+export default function WhatIfPanel({ stationId, station, scenario, currentIndex, onWhatIfChange }) {
   const [inputs, setInputs] = useState({ solar: 0, wind: 0, demand: 0, battery: 0 });
   const [result, setResult] = useState(null);
   const [runContext, setRunContext] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // Report the current, non-stale What-If inputs (or null) up to the
+  // parent so the Assistant panel (Part 6) can ground explain_what_if
+  // answers in them, without duplicating simulation state -- runContext is
+  // the single source of truth here; it's already cleared exactly when
+  // station/scenario/index change (see the two effects below). Shape
+  // matches the /simulate and /assistant/query request body fields.
+  useEffect(() => {
+    if (!onWhatIfChange) return;
+    onWhatIfChange(
+      runContext
+        ? {
+            solar_capacity_change_pct: runContext.inputs.solar,
+            wind_capacity_change_pct: runContext.inputs.wind,
+            demand_change_pct: runContext.inputs.demand,
+            battery_capacity_change_pct: runContext.inputs.battery,
+          }
+        : null
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runContext]);
 
   const hasSolar = (station?.solar_capacity_kw ?? 0) > 0;
   const hasWind = (station?.wind_capacity_kw ?? 0) > 0;
